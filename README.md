@@ -96,22 +96,4 @@ annotator({
 })
 ```
 
-### Team Collaboration
-
-For network access (multiple team members modifying the same app):
-
-```typescript
-annotator({
-  port: 7318,
-  listenAddress: '0.0.0.0',                // Accept connections from network
-  publicAddress: 'https://myapp.com:7318', // Public URL for the toolbar
-})
-```
-
-Team members can:
-1. Open the app at `https://myapp.com`
-2. Use the annotator toolbar to modify the UI
-3. Changes save directly to source files
-4. Everyone sees updates in real-time
-
 **Happy coding! 🚀**
