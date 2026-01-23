@@ -81,8 +81,8 @@ function saveScreenshot(base64: string, format: 'png' | 'jpeg'): string {
   return filePath
 }
 
-type FeedbackField = 'attributes' | 'styles' | 'component' | 'children'
-const BASIC_FIELDS = ['index', 'tagName', 'xpath', 'cssSelector', 'textContent'] as const
+type FeedbackField = 'xpath' | 'attributes' | 'styles' | 'children'
+const BASIC_FIELDS = ['index', 'tagName', 'cssSelector', 'textContent'] as const
 
 function filterFeedbackFields(
   elements: Record<string, unknown>[],
@@ -90,21 +90,22 @@ function filterFeedbackFields(
 ): Record<string, unknown>[] {
   return elements.map((el) => {
     const result: Record<string, unknown> = {}
-    // basic fields and comment are always included
+    // basic fields, comment, and componentData are always included
     if ('comment' in el) result.comment = el.comment
+    if ('componentData' in el) result.componentData = el.componentData
     for (const f of BASIC_FIELDS) {
       if (f in el) result[f] = el[f]
     }
 
     // additional fields only if explicitly requested
+    if (fields?.includes('xpath') && 'xpath' in el) {
+      result.xpath = el.xpath
+    }
     if (fields?.includes('attributes') && 'attributes' in el) {
       result.attributes = el.attributes
     }
     if (fields?.includes('styles') && 'computedStyles' in el) {
       result.computedStyles = el.computedStyles
-    }
-    if (fields?.includes('component') && 'componentData' in el) {
-      result.componentData = el.componentData
     }
     if (fields?.includes('children') && 'children' in el) {
       result.children = el.children
@@ -480,14 +481,14 @@ function createMcpServer(): McpServer {
   )
 
   // Tool: annotator_get_feedback
-  const feedbackFieldsEnum = z.enum(['attributes', 'styles', 'component', 'children'])
+  const feedbackFieldsEnum = z.enum(['xpath', 'attributes', 'styles', 'children'])
   mcp.tool(
     'annotator_get_feedback',
     'Get data about currently selected feedback items in the browser. Returns details of UI elements the user has marked for feedback.',
     {
       sessionId: sessionIdParam,
       fields: z.array(feedbackFieldsEnum).optional().describe(
-        'Additional fields to include: attributes, styles (computedStyles), component (componentData), children. By default only basic fields (index, tagName, xpath, cssSelector, textContent) and comment are returned.'
+        'Additional fields to include: xpath, attributes, styles (computedStyles), children. By default returns basic fields (index, tagName, cssSelector, textContent), comment, and componentData.'
       ),
     },
     async ({ sessionId, fields }) => {
