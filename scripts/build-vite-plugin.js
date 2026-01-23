@@ -10,7 +10,7 @@ esbuild.build({
   platform: 'node',
   target: 'node18',
   format: 'esm',
-  minify: false, // Keep readable for debugging
+  minify: false,
   sourcemap: true,
   external: [
     'vite',

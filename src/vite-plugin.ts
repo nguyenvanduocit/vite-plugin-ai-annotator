@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 
-export interface AnnotatorPluginOptions {
+export interface AiAnnotatorOptions {
   /**
    * Port to run the server on
    * @default 7318
@@ -27,13 +27,13 @@ export interface AnnotatorPluginOptions {
   verbose?: boolean;
 }
 
-class AnnotatorServerManager {
+class AiAnnotatorServer {
   private serverProcess: ChildProcess | null = null;
-  private options: Required<AnnotatorPluginOptions>;
+  private options: Required<AiAnnotatorOptions>;
   private packageDir: string;
   private isDevelopment: boolean;
 
-  constructor(options: AnnotatorPluginOptions = {}) {
+  constructor(options: AiAnnotatorOptions = {}) {
     const port = options.port ?? 7318;
     const listenAddress = options.listenAddress ?? 'localhost';
     
@@ -46,7 +46,6 @@ class AnnotatorServerManager {
   
 
     // Detect if we're running from source or from installed package
-    // @ts-ignore - import.meta is available in ESM builds
     const currentFileDir = dirname(fileURLToPath(import.meta.url));
 
     // Check if we're in src directory (development) or dist directory (production)
@@ -135,17 +134,17 @@ class AnnotatorServerManager {
 
     if (!this.options.verbose && this.serverProcess.stderr) {
       this.serverProcess.stderr.on('data', (data) => {
-        console.error(`[annotator-server] Error: ${data}`);
+        console.error(`[ai-annotator-server] Error: ${data}`);
       });
     }
 
     this.serverProcess.on('error', (error) => {
-      console.error('[annotator-server] Failed to start:', error);
+      console.error('[ai-annotator-server] Failed to start:', error);
     });
 
     this.serverProcess.on('exit', (code) => {
       if (code !== 0 && code !== null) {
-        console.error(`[annotator-server] Process exited with code ${code}`);
+        console.error(`[ai-annotator-server] Process exited with code ${code}`);
       }
       this.serverProcess = null;
     });
@@ -201,7 +200,7 @@ class AnnotatorServerManager {
 
   private log(message: string): void {
     if (this.options.verbose) {
-      console.log(`[annotator-plugin] ${message}`);
+      console.log(`[ai-annotator] ${message}`);
     }
   }
 
@@ -224,16 +223,16 @@ function injectScriptIntoHtml(html: string, scriptTag: string): string {
   return html + scriptTag;
 }
 
-export function annotatorPlugin(options: AnnotatorPluginOptions = {}): Plugin {
-  let serverManager: AnnotatorServerManager;
+export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
+  let serverManager: AiAnnotatorServer;
 
   return {
-    name: 'vite-plugin-annotator',
+    name: 'vite-plugin-ai-annotator',
     // Only apply plugin during development (serve command)
     apply: 'serve',
 
     configResolved() {
-      serverManager = new AnnotatorServerManager(options);
+      serverManager = new AiAnnotatorServer(options);
     },
 
     async buildStart() {
@@ -310,4 +309,4 @@ export function annotatorPlugin(options: AnnotatorPluginOptions = {}): Plugin {
 }
 
 // Default export for convenience
-export default annotatorPlugin;
+export default aiAnnotator;

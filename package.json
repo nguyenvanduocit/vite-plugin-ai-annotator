@@ -1,21 +1,21 @@
 {
-  "name": "instantcode",
-  "version": "2.0.0",
-  "description": "AI-powered web inspection tool - Pick elements and get instant AI assistance",
+  "name": "vite-plugin-ai-annotator",
+  "version": "1.0.0",
+  "description": "AI-powered element annotator for Vite - Pick elements and get instant AI code modifications",
   "type": "module",
-  "main": "dist/index.cjs",
-  "types": "dist/index.d.ts",
+  "main": "dist/vite-plugin.js",
+  "types": "dist/vite-plugin.d.ts",
   "bin": {
-    "instantcode": "./dist/index.cjs"
+    "ai-annotator": "./dist/index.cjs"
   },
   "exports": {
     ".": {
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/vite-plugin.d.ts",
+      "import": "./dist/vite-plugin.js"
     },
     "./vite-plugin": {
-      "import": "./dist/vite-plugin.js",
-      "types": "./dist/vite-plugin.d.ts"
+      "types": "./dist/vite-plugin.d.ts",
+      "import": "./dist/vite-plugin.js"
     }
   },
   "scripts": {
@@ -33,24 +33,25 @@
     "README.md"
   ],
   "keywords": [
-    "frontend",
+    "vite",
+    "vite-plugin",
     "ai",
+    "annotator",
     "element-picker",
-    "web-development",
-    "server",
+    "claude",
     "inspector",
-    "debugging",
-    "claude"
+    "web-development",
+    "frontend"
   ],
   "author": "Nguyen Van Duoc <nguyenvanduocit@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nguyenvanduocit/instantCode.git"
+    "url": "git+https://github.com/nguyenvanduocit/vite-plugin-ai-annotator.git"
   },
-  "homepage": "https://github.com/nguyenvanduocit/instantCode#readme",
+  "homepage": "https://github.com/nguyenvanduocit/vite-plugin-ai-annotator#readme",
   "bugs": {
-    "url": "https://github.com/nguyenvanduocit/instantCode/issues"
+    "url": "https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/issues"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.4",

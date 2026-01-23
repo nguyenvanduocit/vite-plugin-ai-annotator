@@ -9,7 +9,7 @@
  *   server.client.methodName(args);
  *   server.dispose();
  *
- * To regenerate: bunx socketrpc-gen ./src/rpc/define.ts
+ * To regenerate: bunx socketrpc-gen /Volumes/Data/Projects/instantcode/app/src/rpc/define.ts
  */
 
 import type { Socket } from "socket.io";
@@ -21,8 +21,6 @@ import type { BrowserSession, PageContext, ElementData, SelectionResult, Screens
 export interface RpcServerHandle {
     /** Register handler for 'getSessions' - called by client */
     getSessions: (handler: () => Promise<BrowserSession[] | RpcError>) => void;
-    /** Register handler for 'setActiveSession' - called by client */
-    setActiveSession: (handler: (sessionId: string) => Promise<boolean | RpcError>) => void;
     /** Register handler for 'ping' - called by client */
     ping: (handler: () => Promise<string | RpcError>) => void;
     /** Register handler for RPC errors */
@@ -110,20 +108,6 @@ export function createRpcServer(socket: Socket): RpcServer {
             };
             socket.on('getSessions', listener);
             unsubscribers.push(() => socket.off('getSessions', listener));
-        },
-        setActiveSession(handler: (sessionId: string) => Promise<boolean | RpcError>) {
-            checkDisposed();
-            const listener = async (sessionId: string, callback: (result: boolean | RpcError) => void) => {
-                try {
-                    const result = await handler(sessionId);
-                    callback(result);
-                } catch (error) {
-                    console.error('[setActiveSession] Handler error:', error);
-                    callback({ message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined });
-                }
-            };
-            socket.on('setActiveSession', listener);
-            unsubscribers.push(() => socket.off('setActiveSession', listener));
         },
         ping(handler: () => Promise<string | RpcError>) {
             checkDisposed();

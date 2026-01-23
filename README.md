@@ -1,7 +1,9 @@
-# InstantCode - AI-Powered Web Development Assistant
+# vite-plugin-ai-annotator
+
+AI-powered element annotator for Vite - Pick elements and get instant AI code modifications.
 
 [![Watch the Tutorial](https://img.youtube.com/vi/OuKnfCbmfTg/maxresdefault.jpg)](https://youtu.be/OuKnfCbmfTg)
-> 📺 **[Watch the Tutorial Video](https://youtu.be/OuKnfCbmfTg)** - See InstantCode in action!
+> 📺 **[Watch the Tutorial Video](https://youtu.be/OuKnfCbmfTg)** - See the plugin in action!
 
 ## What can this plugin help you?
 
@@ -15,7 +17,7 @@ After installing the plugin, you can:
 
 ## Prerequisites
 
-InstantCode requires **Claude Code** to provide AI assistance:
+This plugin requires **Claude Code** to provide AI assistance:
 
 ```bash
 # Install Claude Code globally
@@ -25,27 +27,25 @@ bun install -g @anthropic-ai/claude-code
 claude --version
 ```
 
-## Quick Start with Vite
+## Quick Start
 
-The fastest way to get started is using our Vite plugin. This automatically handles everything for you!
+This is an **ESM-only Vite plugin**. Installation is simple!
 
-### 1. Install InstantCode
+### 1. Install
 
 ```bash
-bun add -d instantcode
+bun add -d vite-plugin-ai-annotator
 ```
 
 ### 2. Add to Your Vite Config
 
-Add the plugin to your `vite.config.ts`:
-
 ```typescript
 import { defineConfig } from 'vite';
-import inspectorPlugin from 'instantcode/vite-plugin';
+import annotator from 'vite-plugin-ai-annotator';
 
 export default defineConfig({
   plugins: [
-    inspectorPlugin(),
+    annotator(),
   ],
 });
 ```
@@ -56,112 +56,43 @@ export default defineConfig({
 bun dev
 ```
 
-That's it! The InstantCode toolbar will automatically appear in your application and ready to use.
+That's it! The annotator toolbar will automatically appear in your application.
 
-## Plugin Configuration
-
-The Vite plugin accepts these options:
+## Plugin Options
 
 ```typescript
-inspectorPlugin({
-  port: 7318,
-  verbose: false,
+annotator({
+  port: 7318,          // Server port (default: 7318)
+  verbose: false,      // Enable detailed logging (default: false)
 })
 ```
 
 ## Framework Support
 
-InstantCode works with all Vite-supported frameworks:
+Works with all Vite-supported frameworks:
 
 - ⚛️ **React** - Detects components, props, and state
 - 🟢 **Vue** - Understands composition/options API
-- 🅰️ **Angular** - Recognizes components and directives  
+- 🅰️ **Angular** - Recognizes components and directives
 - 🟠 **Svelte** - Identifies components and stores
 - 📄 **Vanilla JS** - Works with plain HTML/CSS/JS
 
-## Advanced Usage - Team Collaboration
+## Team Collaboration
 
-### Enable Team-Wide Code Modification
-
-Want your entire team to modify the app? Or let users customize the app themselves? Run InstantCode on a server!
+Want your entire team to modify the app? Configure for network access:
 
 ```typescript
-inspectorPlugin({
-  port: 7318,                            // Port to run server on (default: 7318)
-  listenAddress: '0.0.0.0',              // Used for socket connection between the toolbar and the server
-  publicAddress: 'https://ai.example.com', // Used to serve the inspector-toolbar.js file
-  verbose: false,                        // Enable detailed logging (default: false)
-})
-```
-
-**How it works:**
-- `listenAddress: '0.0.0.0'` - Makes the InstantCode server accessible from any network
-- `publicAddress` - The URL where your team accesses the inspector toolbar
-
-**Example Setup for Team Access:**
-```typescript
-// Deploy your app on a server at https://myapp.com
-// Configure InstantCode to be accessible:
-inspectorPlugin({
-  listenAddress: '0.0.0.0',              // Accept connections from team members
-  publicAddress: 'https://myapp.com:7318' // Where the toolbar connects
+annotator({
+  port: 7318,
+  listenAddress: '0.0.0.0',                // Accept connections from network
+  publicAddress: 'https://myapp.com:7318', // Public URL for the toolbar
 })
 ```
 
 Now anyone on your team can:
 1. Open the app at `https://myapp.com`
-2. Use the InstantCode toolbar to modify the UI
-3. Changes are saved directly to the server's source files
+2. Use the annotator toolbar to modify the UI
+3. Changes are saved directly to the source files
 4. Everyone sees updates in real-time!
 
-### Manual Setup (Without Vite)
-
-If you prefer manual control or aren't using Vite:
-
-#### Run Standalone Server
-
-```bash
-# Navigate to your project directory first (important for context!)
-cd /path/to/your/project
-
-# Start the server (basic)
-bunx instantcode@latest
-
-# With custom port
-bunx instantcode --port 8080
-
-# Listen on all interfaces (for team access)
-bunx instantcode --listen 0.0.0.0
-
-# Use with reverse proxy
-bunx instantcode --listen localhost --public-address https://ai.example.com
-
-# Enable verbose logging
-bunx instantcode --verbose
-```
-
-#### CLI Options
-
-- `-p, --port <number>` - Port to run server on (default: 7318)
-- `-l, --listen <address>` - Address to bind server to (default: localhost)
-- `-a, --public-address <url>` - Public URL for reverse proxy scenarios
-- `-V, --verbose` - Enable verbose logging
-- `-h, --help` - Show help message
-- `-v, --version` - Show version
-
-#### Add Script Manually
-
-Add to your HTML:
-
-```html
-<!-- Default setup -->
-<script src="http://localhost:7318/inspector-toolbar.js"></script>
-
-<!-- With custom port -->
-<script src="http://localhost:8080/inspector-toolbar.js"></script>
-
-<!-- With reverse proxy -->
-<script src="https://ai.yourdomain.com/inspector-toolbar.js"></script>
-```
-
-**Happy coding! 🚀** and save your precious cognitive load.
+**Happy coding! 🚀**

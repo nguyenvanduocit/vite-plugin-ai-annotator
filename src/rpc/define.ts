@@ -76,9 +76,8 @@ export interface BrowserSession {
 // SERVER exposes these functions (MCP/external clients can call via server)
 // Used by socket-rpc code generator, not referenced directly
 export interface ServerFunctions {
-  // Session management
+  // Session management (stateless - no active session concept)
   getSessions: () => BrowserSession[]
-  setActiveSession: (sessionId: string) => boolean
 
   // Ping for health check
   ping: () => string

@@ -9,7 +9,7 @@
  *   client.server.methodName(args);
  *   client.dispose();
  *
- * To regenerate: bunx socketrpc-gen ./src/rpc/define.ts
+ * To regenerate: bunx socketrpc-gen /Volumes/Data/Projects/instantcode/app/src/rpc/define.ts
  */
 
 import type { Socket } from "socket.io-client";
@@ -45,8 +45,6 @@ export interface RpcClientHandle {
 export interface RpcClientServer {
     /** Call server's 'getSessions' method */
     getSessions: (timeout?: number) => Promise<BrowserSession[] | RpcError>;
-    /** Call server's 'setActiveSession' method */
-    setActiveSession: (sessionId: string, timeout?: number) => Promise<boolean | RpcError>;
     /** Call server's 'ping' method */
     ping: (timeout?: number) => Promise<string | RpcError>;
 }
@@ -237,13 +235,6 @@ export function createRpcClient(socket: Socket): RpcClient {
         async getSessions(timeout: number = 5000): Promise<BrowserSession[] | RpcError> {
             try {
                 return await socket.timeout(timeout).emitWithAck('getSessions');
-            } catch (err) {
-                return { message: err instanceof Error ? err.message : String(err), code: 'INTERNAL_ERROR', data: undefined };
-            }
-        },
-        async setActiveSession(sessionId: string, timeout: number = 5000): Promise<boolean | RpcError> {
-            try {
-                return await socket.timeout(timeout).emitWithAck('setActiveSession', sessionId);
             } catch (err) {
                 return { message: err instanceof Error ? err.message : String(err), code: 'INTERNAL_ERROR', data: undefined };
             }

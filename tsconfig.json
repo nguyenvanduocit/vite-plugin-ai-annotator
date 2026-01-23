@@ -27,6 +27,7 @@
     "node_modules",
     "dist",
     "src/inspector-toolbar.ts",
-    "src/rpc/define.ts"
+    "src/rpc/define.ts",
+    "src/vite-plugin.ts"
   ]
 }
