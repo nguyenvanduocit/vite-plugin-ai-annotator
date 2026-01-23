@@ -5,6 +5,16 @@ AI-powered element annotator for Vite - Pick elements and get instant AI code mo
 [![Watch the Tutorial](https://img.youtube.com/vi/OuKnfCbmfTg/maxresdefault.jpg)](https://youtu.be/OuKnfCbmfTg)
 > 📺 **[Watch the Tutorial Video](https://youtu.be/OuKnfCbmfTg)** - See the plugin in action!
 
+## Requirements
+
+This plugin requires **Claude Code** CLI to be installed:
+
+```bash
+bun install -g @anthropic-ai/claude-code
+```
+
+> Claude Code is Anthropic's official CLI tool that provides AI assistance. [Learn more](https://docs.anthropic.com/en/docs/claude-code)
+
 ## What can this plugin help you?
 
 After installing the plugin, you can:
@@ -14,18 +24,6 @@ After installing the plugin, you can:
 - **See instant results** - your changes appear immediately in the browser
 
 > Save cognitive load, because it's precious.
-
-## Prerequisites
-
-This plugin requires **Claude Code** to provide AI assistance:
-
-```bash
-# Install Claude Code globally
-bun install -g @anthropic-ai/claude-code
-
-# Verify installation
-claude --version
-```
 
 ## Quick Start
 
