@@ -182,13 +182,15 @@ export class AnnotatorToolbar extends LitElement {
     .popover::before {
       content: '// COMMENT_INPUT';
       position: absolute;
-      top: -18px;
-      left: 0;
+      top: -20px;
+      left: -2px;
+      padding: 2px 6px;
       font-size: 9px;
       color: var(--cyber-cyan);
+      background: var(--cyber-black);
+      border: 1px solid var(--cyber-cyan);
       text-transform: uppercase;
       letter-spacing: 1px;
-      opacity: 0.7;
     }
 
     @keyframes popover-in {
