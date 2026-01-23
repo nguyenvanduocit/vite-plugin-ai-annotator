@@ -846,7 +846,7 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No session ID')
       return
     }
-    const text = `I have selected elements in the browser. Use the \`annotator_get_selected_elements\` tool to retrieve them and modify the code.`
+    const text = `I have selected elements in the browser (session: ${this.sessionId}). Use the \`annotator_get_selected_elements\` tool to retrieve them and modify the code.`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast('Copied!')
