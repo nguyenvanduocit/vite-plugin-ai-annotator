@@ -769,7 +769,7 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
 
-    const text = JSON.stringify(elements, null, 2)
+    const text = `I have selected ${elements.length} element(s) in the browser. Use the \`annotator_get_selected_elements\` tool to retrieve them and modify the code.`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast(`Copied ${elements.length} element(s)`)
