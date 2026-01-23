@@ -169,7 +169,7 @@ async function main() {
   // Tool: annotator_get_page_context
   mcp.tool(
     'annotator_get_page_context',
-    'Get current page context from browser session (URL, title, selection count)',
+    'Get current page context from browser session (URL, title, feedback count)',
     { sessionId: sessionIdParam },
     async ({ sessionId }) => {
       try {
@@ -181,13 +181,13 @@ async function main() {
     }
   )
 
-  // Tool: annotator_select_element
+  // Tool: annotator_select_feedback
   mcp.tool(
-    'annotator_select_element',
-    'Enter element inspection mode or select element by CSS/XPath selector',
+    'annotator_select_feedback',
+    'Enter feedback inspection mode or select feedback by CSS/XPath selector. Use this to let users mark UI elements they want to provide feedback on.',
     {
       sessionId: sessionIdParam,
-      mode: z.enum(['inspect', 'selector']).default('inspect').describe('Selection mode'),
+      mode: z.enum(['inspect', 'selector']).default('inspect').describe('Feedback selection mode'),
       selector: z.string().optional().describe('CSS or XPath selector (required when mode is "selector")'),
       selectorType: z.enum(['css', 'xpath']).default('css').describe('Type of selector'),
     },
@@ -198,8 +198,8 @@ async function main() {
         )
         return textResponse(
           result.success
-            ? `Selection triggered. ${result.count} element(s) selected.`
-            : `Selection failed: ${result.error}`
+            ? `Feedback selection triggered. ${result.count} feedback item(s) selected.`
+            : `Feedback selection failed: ${result.error}`
         )
       } catch (err) {
         return textResponse(`Error: ${err instanceof Error ? err.message : String(err)}`)
@@ -207,10 +207,10 @@ async function main() {
     }
   )
 
-  // Tool: annotator_get_selected_elements
+  // Tool: annotator_get_feedback
   mcp.tool(
-    'annotator_get_selected_elements',
-    'Get data about currently selected elements in the browser',
+    'annotator_get_feedback',
+    'Get data about currently selected feedback items in the browser. Returns details of UI elements the user has marked for feedback.',
     { sessionId: sessionIdParam },
     async ({ sessionId }) => {
       try {
@@ -218,7 +218,7 @@ async function main() {
         return textResponse(
           result.length > 0
             ? JSON.stringify(result, null, 2)
-            : 'No elements selected. Use annotator_select_element first.'
+            : 'No feedback selected. Use annotator_select_feedback first.'
         )
       } catch (err) {
         return textResponse(`Error: ${err instanceof Error ? err.message : String(err)}`)
@@ -253,15 +253,15 @@ async function main() {
     }
   )
 
-  // Tool: annotator_clear_selection
+  // Tool: annotator_clear_feedback
   mcp.tool(
-    'annotator_clear_selection',
-    'Clear all selected elements in the browser',
+    'annotator_clear_feedback',
+    'Clear all selected feedback items in the browser. Removes all UI element selections made for feedback.',
     { sessionId: sessionIdParam },
     async ({ sessionId }) => {
       try {
         await callServer(socket, 'mcp:clearSelection', [sessionId])
-        return textResponse('Selection cleared.')
+        return textResponse('Feedback cleared.')
       } catch (err) {
         return textResponse(`Error: ${err instanceof Error ? err.message : String(err)}`)
       }

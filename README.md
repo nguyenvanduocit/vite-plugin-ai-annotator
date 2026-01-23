@@ -78,9 +78,9 @@ The annotator toolbar will automatically appear in your application.
 
 ## Usage
 
-1. Click the **inspect button** on the toolbar to enter selection mode
-2. Click on any element(s) you want to modify
-3. Ask Claude Code to modify them - it will use `annotator_get_selected_elements` to get the selected elements with their source locations
+1. Click the **inspect button** on the toolbar to enter feedback mode
+2. Click on any element(s) you want to provide feedback on
+3. Ask Claude Code to modify them - it will use `annotator_get_feedback` to get the selected feedback with their source locations
 4. Claude modifies the source code directly
 
 Example prompt: *"Make the selected button larger and change its color to blue"*
