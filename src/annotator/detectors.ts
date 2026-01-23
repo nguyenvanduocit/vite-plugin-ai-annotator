@@ -5,6 +5,61 @@
 import { createLogger } from '../utils/logger'
 import { XPathUtils, ElementSelector } from '../utils/xpath'
 
+// Internal framework property interfaces (undocumented browser internals)
+interface ReactFiberType {
+  name?: string
+  displayName?: string
+  __source?: { fileName?: string }
+  prototype?: { render?: unknown }
+}
+
+interface ReactFiber {
+  type?: ReactFiberType | string
+  return?: ReactFiber
+  _debugOwner?: ReactFiber
+  _debugSource?: {
+    fileName?: string
+    lineNumber?: number
+    columnNumber?: number
+  }
+}
+
+interface VueVNode {
+  props?: { __v_inspector?: string }
+  loc?: {
+    source?: string
+    start?: { line?: number; column?: number; offset?: number }
+    end?: { line?: number; column?: number; offset?: number }
+  }
+  type?: { name?: string; __v_inspector?: string }
+  componentOptions?: { __v_inspector?: string }
+  __v_inspector?: string
+  __source?: {
+    line?: number
+    column?: number
+    file?: string
+    name?: string
+  }
+}
+
+interface VueInstance {
+  __v_inspector?: string
+  $options?: { __v_inspector?: string }
+  type?: { __v_inspector?: string }
+  vnode?: VueVNode
+}
+
+interface ElementWithFrameworkProps extends Element {
+  __vnode?: VueVNode
+  __vueParentComponent?: VueInstance
+  __vue__?: VueInstance
+  __v_inspector?: string
+  $vnode?: VueVNode
+  [key: `__reactFiber${string}`]: ReactFiber | undefined
+  [key: `__reactInternalInstance${string}`]: ReactFiber | undefined
+  [key: `_reactInternalFiber${string}`]: ReactFiber | undefined
+}
+
 export interface ComponentInfo {
   componentLocation: string
   componentName?: string
@@ -49,14 +104,15 @@ export function findNearestComponent(element: Element, verbose = false): Compone
     let componentInfo = getVueComponentInfo(element)
     
     // Debug logging
+    const el = element as ElementWithFrameworkProps
     if (componentInfo) {
       logger.log('🟢 Vue component found:', componentInfo)
     } else {
       logger.log('🔍 No Vue component found for element:', element.tagName, 'Checking properties:', {
-        __vnode: !!(element as any).__vnode,
-        __vueParentComponent: !!(element as any).__vueParentComponent,
-        __vue__: !!(element as any).__vue__,
-        __v_inspector: !!(element as any).__v_inspector
+        __vnode: !!el.__vnode,
+        __vueParentComponent: !!el.__vueParentComponent,
+        __vue__: !!el.__vue__,
+        __v_inspector: !!el.__v_inspector
       })
     }
     
@@ -112,20 +168,20 @@ export function findNearestComponent(element: Element, verbose = false): Compone
 function getReactComponentInfo(element: Element): ComponentInfo | null {
   if (!element) return null
 
-  const elementAny = element as any
+  const el = element as ElementWithFrameworkProps
 
   // Try different React fiber properties
-  const fiberKey = Object.keys(elementAny).find(key => 
-    key.startsWith('__reactFiber') || 
+  const fiberKey = Object.keys(el).find(key =>
+    key.startsWith('__reactFiber') ||
     key.startsWith('__reactInternalInstance') ||
     key.startsWith('_reactInternalFiber')
-  )
+  ) as keyof ElementWithFrameworkProps | undefined
 
   if (!fiberKey) {
     return null
   }
 
-  const fiber = elementAny[fiberKey]
+  const fiber = el[fiberKey] as ReactFiber | undefined
   if (!fiber) {
     return null
   }
@@ -142,34 +198,34 @@ function getReactComponentInfo(element: Element): ComponentInfo | null {
 /**
  * Extract component information from React fiber
  */
-function extractReactComponentInfo(fiber: any, element: Element): ComponentInfo | null {
+function extractReactComponentInfo(fiber: ReactFiber, element: Element): ComponentInfo | null {
   if (!fiber) return null
 
-  let currentFiber = fiber
+  let currentFiber: ReactFiber | undefined = fiber
   let componentName = ''
   let componentFile = ''
 
   // Walk up the fiber tree to find component information
   while (currentFiber) {
-    // Look for component name
-    if (currentFiber.type && typeof currentFiber.type === 'function') {
-      componentName = currentFiber.type.name || currentFiber.type.displayName || 'Anonymous'
-      
+    const fiberType = currentFiber.type
+    // Look for component name (function component)
+    if (fiberType && typeof fiberType === 'object') {
+      componentName = fiberType.name || fiberType.displayName || 'Anonymous'
+
       // Try to get file location from React DevTools source mapping
-      if (currentFiber.type.__source) {
-        componentFile = currentFiber.type.__source.fileName || ''
+      if (fiberType.__source) {
+        componentFile = fiberType.__source.fileName || ''
       }
-      
-      break
-    }
-    
-    // Also check for component classes
-    if (currentFiber.type && currentFiber.type.prototype && currentFiber.type.prototype.render) {
-      componentName = currentFiber.type.name || 'Component'
+
+      // Also check for component classes
+      if (fiberType.prototype?.render) {
+        componentName = fiberType.name || 'Component'
+      }
+
       break
     }
 
-    currentFiber = currentFiber.return || currentFiber._debugOwner
+    currentFiber = currentFiber.return ?? currentFiber._debugOwner
   }
 
   if (!componentName && !componentFile) {
@@ -194,7 +250,7 @@ function extractReactComponentInfo(fiber: any, element: Element): ComponentInfo 
 /**
  * Extract element-specific location data from React fiber
  */
-function extractReactElementLocation(fiber: any, element: Element): Partial<ComponentInfo> | null {
+function extractReactElementLocation(fiber: ReactFiber, element: Element): Partial<ComponentInfo> | null {
   try {
     const locationInfo: Partial<ComponentInfo> = {}
 
@@ -229,21 +285,22 @@ function extractReactElementLocation(fiber: any, element: Element): Partial<Comp
 /**
  * Build source hierarchy from React component tree
  */
-function buildReactSourceHierarchy(fiber: any, element: Element): string | null {
+function buildReactSourceHierarchy(fiber: ReactFiber, element: Element): string | null {
   try {
     const parts: string[] = []
-    let currentFiber = fiber
+    let currentFiber: ReactFiber | undefined = fiber
 
     // Walk up the fiber tree to build hierarchy
     while (currentFiber && parts.length < 3) { // Limit depth to avoid noise
-      if (currentFiber.type && typeof currentFiber.type === 'function') {
-        const name = currentFiber.type.name || currentFiber.type.displayName
+      const fiberType = currentFiber.type
+      if (fiberType && typeof fiberType === 'object') {
+        const name = fiberType.name || fiberType.displayName
         if (name && name !== 'Fragment') {
           parts.unshift(name)
         }
-      } else if (currentFiber.type && typeof currentFiber.type === 'string') {
+      } else if (fiberType && typeof fiberType === 'string') {
         // DOM element
-        parts.push(currentFiber.type)
+        parts.push(fiberType)
       }
 
       currentFiber = currentFiber.return
@@ -269,18 +326,22 @@ function buildReactSourceHierarchy(fiber: any, element: Element): string | null 
 /**
  * Extract source map information from React fiber
  */
-function extractReactSourceMap(fiber: any): ComponentInfo['sourceMap'] | null {
+function extractReactSourceMap(fiber: ReactFiber): ComponentInfo['sourceMap'] | null {
   try {
     // Look for source map data in React DevTools
     if (fiber._debugSource) {
+      const fiberType = fiber.type
+      const typeName = fiberType && typeof fiberType === 'object'
+        ? (fiberType.name || fiberType.displayName)
+        : undefined
       return {
         originalLine: fiber._debugSource.lineNumber || 0,
         originalColumn: fiber._debugSource.columnNumber || 0,
         originalSource: fiber._debugSource.fileName || '',
-        originalName: fiber.type?.name || fiber.type?.displayName
+        originalName: typeName
       }
     }
-    
+
     return null
   } catch (error) {
     return null
@@ -304,40 +365,40 @@ function getVanillaComponentInfo(element: Element): ComponentInfo | null {
 function getVueComponentInfo(element: Element): ComponentInfo | null {
   if (!element) return null
 
-  const elementAny = element as any
+  const el = element as ElementWithFrameworkProps
 
   // Try multiple Vue property paths for different Vue versions and configurations
-  
+
   // Vue 3 with __v_inspector in props
-  let codeLocation = elementAny.__vnode?.props?.__v_inspector
-  let vueInstance = null
-  let vnode = null
-  
+  let codeLocation = el.__vnode?.props?.__v_inspector
+  let vueInstance: VueInstance | null = null
+  let vnode: VueVNode | null = null
+
   // Vue 3 with parent component
   if (!codeLocation) {
-    codeLocation = elementAny.__vueParentComponent?.vnode?.props?.__v_inspector
-    vueInstance = elementAny.__vueParentComponent
-    vnode = elementAny.__vueParentComponent?.vnode
+    codeLocation = el.__vueParentComponent?.vnode?.props?.__v_inspector
+    vueInstance = el.__vueParentComponent ?? null
+    vnode = el.__vueParentComponent?.vnode ?? null
   }
-  
+
   // Direct __v_inspector on element
   if (!codeLocation) {
-    codeLocation = elementAny.__v_inspector
+    codeLocation = el.__v_inspector
   }
-  
+
   // Vue component instance with __v_inspector
   if (!codeLocation) {
-    vueInstance = elementAny.__vue__ || elementAny.__vueParentComponent
+    vueInstance = el.__vue__ ?? el.__vueParentComponent ?? null
     if (vueInstance) {
       codeLocation = vueInstance.__v_inspector ||
                     vueInstance.$options?.__v_inspector ||
                     vueInstance.type?.__v_inspector
     }
   }
-  
+
   // Check vnode directly
   if (!codeLocation && !vnode) {
-    vnode = elementAny.__vnode || elementAny.$vnode
+    vnode = el.__vnode ?? el.$vnode ?? null
     if (vnode) {
       codeLocation = vnode.__v_inspector ||
                     vnode.props?.__v_inspector ||
@@ -366,7 +427,7 @@ function getVueComponentInfo(element: Element): ComponentInfo | null {
 /**
  * Extract element-specific location data from Vue internals
  */
-function extractVueElementLocation(element: Element, vnode: any): Partial<ComponentInfo> | null {
+function extractVueElementLocation(element: Element, vnode: VueVNode | null): Partial<ComponentInfo> | null {
   try {
     const locationInfo: Partial<ComponentInfo> = {}
 
@@ -406,7 +467,7 @@ function extractVueElementLocation(element: Element, vnode: any): Partial<Compon
 /**
  * Build source hierarchy from Vue component tree
  */
-function buildVueSourceHierarchy(element: Element, vnode: any): string | null {
+function buildVueSourceHierarchy(element: Element, vnode: VueVNode | null): string | null {
   try {
     const parts: string[] = []
     
@@ -440,7 +501,7 @@ function buildVueSourceHierarchy(element: Element, vnode: any): string | null {
 /**
  * Extract source map information from Vue internals
  */
-function extractVueSourceMap(vnode: any): ComponentInfo['sourceMap'] | null {
+function extractVueSourceMap(vnode: VueVNode | null): ComponentInfo['sourceMap'] | null {
   try {
     // Look for source map data in Vue internals
     // This is framework-specific and may vary by Vue version

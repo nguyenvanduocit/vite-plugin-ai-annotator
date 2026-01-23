@@ -3,10 +3,10 @@
  */
 
 export interface Logger {
-  log(...args: any[]): void
-  info(...args: any[]): void
-  warn(...args: any[]): void
-  error(...args: any[]): void
+  log(...args: unknown[]): void
+  info(...args: unknown[]): void
+  warn(...args: unknown[]): void
+  error(...args: unknown[]): void
 }
 
 export function createLogger(verbose: boolean): Logger {

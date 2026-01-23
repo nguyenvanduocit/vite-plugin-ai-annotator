@@ -4,6 +4,7 @@
 
 import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/dom'
 import type { ElementData } from '../rpc/define'
+import type { ComponentInfo } from './detectors'
 import { XPathUtils } from '../utils/xpath'
 
 export interface SelectedElementInfo {
@@ -13,8 +14,16 @@ export interface SelectedElementInfo {
   index: number
 }
 
+// Badge element with cleanup function attached
+interface BadgeElement extends HTMLElement {
+  _cleanup?: () => void
+}
+
+// Component finder function type
+type ComponentFinder = (el: Element) => ComponentInfo | null
+
 export interface ElementSelectionManager {
-  selectElement(element: Element, componentFinder?: (el: Element) => any): void
+  selectElement(element: Element, componentFinder?: ComponentFinder): void
   deselectElement(element: Element): void
   clearAllSelections(): void
   hasElement(element: Element): boolean
@@ -22,14 +31,14 @@ export interface ElementSelectionManager {
   getSelectedCount(): number
   findSelectedParent(element: Element): Element | null
   findSelectedChildren(element: Element): Element[]
-  buildHierarchicalStructure(componentFinder?: (el: Element) => any, imagePaths?: Map<Element, string>): ElementData[]
+  buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[]
   setOnEditClick(callback: (element: Element) => void): void
   updateBadgeCommentIndicator(element: Element, hasComment: boolean): void
 }
 
 export function createElementSelectionManager(): ElementSelectionManager {
   const selectedElements = new Map<Element, SelectedElementInfo>()
-  const badges = new Map<Element, HTMLElement>()
+  const badges = new Map<Element, BadgeElement>()
   let colorIndex = 0
   let onEditClickCallback: ((element: Element) => void) | null = null
   const colors = [
@@ -65,9 +74,9 @@ export function createElementSelectionManager(): ElementSelectionManager {
     index: number,
     color: string,
     element: Element,
-    componentFinder?: (el: Element) => any
-  ): HTMLElement {
-    const badge = document.createElement('div')
+    componentFinder?: ComponentFinder
+  ): BadgeElement {
+    const badge = document.createElement('div') as BadgeElement
     badge.classList.add('annotator-badge')
 
     const shadow = badge.attachShadow({ mode: 'open' })
@@ -169,6 +178,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
     // Use floating-ui for positioning with auto-update
     const cleanup = autoUpdate(element, badge, () => {
       computePosition(element, badge, {
+        strategy: 'fixed',
         placement: 'top-start',
         middleware: [
           offset({ mainAxis: -5, crossAxis: 7 }),
@@ -183,7 +193,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
       })
     })
 
-    ;(badge as any)._cleanup = cleanup
+    badge._cleanup = cleanup
 
     return badge
   }
@@ -241,21 +251,25 @@ export function createElementSelectionManager(): ElementSelectionManager {
   }
 
   return {
-    selectElement(element: Element, componentFinder?: (el: Element) => any): void {
+    selectElement(element: Element, componentFinder?: ComponentFinder): void {
       const color = colors[colorIndex % colors.length]
       const index = selectedElements.size + 1
       colorIndex++
 
-      ;(element as HTMLElement).style.outline = `3px solid ${color}`
-      ;(element as HTMLElement).style.outlineOffset = '-1px'
+      const el = element as HTMLElement
+      const originalOutline = el.style.outline
+      const originalOutlineOffset = el.style.outlineOffset
+
+      el.style.outline = `3px solid ${color}`
+      el.style.outlineOffset = '-1px'
 
       const badge = createBadge(index, color, element, componentFinder)
       badges.set(element, badge)
 
       selectedElements.set(element, {
         color,
-        originalOutline: (element as HTMLElement).style.outline,
-        originalOutlineOffset: (element as HTMLElement).style.outlineOffset,
+        originalOutline,
+        originalOutlineOffset,
         index,
       })
     },
@@ -263,12 +277,12 @@ export function createElementSelectionManager(): ElementSelectionManager {
     deselectElement(element: Element): void {
       const elementData = selectedElements.get(element)
       if (elementData) {
-        ;(element as HTMLElement).style.outline = ''
-        ;(element as HTMLElement).style.outlineOffset = ''
+        ;(element as HTMLElement).style.outline = elementData.originalOutline
+        ;(element as HTMLElement).style.outlineOffset = elementData.originalOutlineOffset
 
         const badge = badges.get(element)
         if (badge) {
-          ;(badge as any)._cleanup?.()
+          badge._cleanup?.()
           badge.remove()
           badges.delete(element)
         }
@@ -279,13 +293,13 @@ export function createElementSelectionManager(): ElementSelectionManager {
     },
 
     clearAllSelections(): void {
-      selectedElements.forEach((_, element) => {
-        ;(element as HTMLElement).style.outline = ''
-        ;(element as HTMLElement).style.outlineOffset = ''
+      selectedElements.forEach((data, element) => {
+        ;(element as HTMLElement).style.outline = data.originalOutline
+        ;(element as HTMLElement).style.outlineOffset = data.originalOutlineOffset
       })
 
       badges.forEach(badge => {
-        ;(badge as any)._cleanup?.()
+        badge._cleanup?.()
         badge.remove()
       })
       badges.clear()
@@ -328,7 +342,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
       }
     },
 
-    buildHierarchicalStructure(componentFinder?: (el: Element) => any, imagePaths?: Map<Element, string>): ElementData[] {
+    buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[] {
       const rootElements: Element[] = []
 
       selectedElements.forEach((_, element) => {

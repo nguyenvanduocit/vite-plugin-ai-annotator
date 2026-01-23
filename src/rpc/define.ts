@@ -1,5 +1,5 @@
 /**
- * Socket RPC Interface Definitions for InstantCode
+ * Socket RPC Interface Definitions for AI Annotator
  *
  * Server: WebSocket server running on port 7318
  * Client: Browser annotator toolbar

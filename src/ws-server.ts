@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from 'express'
 import type { Server } from 'node:http'
 import * as fs from 'node:fs'
-import * as net from 'node:net'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import cors from 'cors'
@@ -63,7 +62,7 @@ export function getRpc(sessionId?: string): { rpc: RpcServer; sessionId: string 
 
 // Screenshot cache directory
 function getScreenshotCacheDir(): string {
-  const cacheDir = path.join(os.tmpdir(), 'instantcode-screenshots')
+  const cacheDir = path.join(os.tmpdir(), 'ai-annotator-screenshots')
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true })
   }
@@ -124,6 +123,15 @@ document.body.prepend(toolbar);
 
 function setupSocketIO(io: SocketIOServer, logger: Logger): void {
   io.on('connection', (socket: Socket) => {
+    const clientType = socket.handshake.query.clientType as string | undefined
+
+    // Handle MCP CLI client
+    if (clientType === 'mcp') {
+      setupMcpClientSocket(socket, logger)
+      return
+    }
+
+    // Handle browser client
     const sessionId = generateSessionId()
 
     const session: BrowserSession = {
@@ -171,29 +179,212 @@ function setupSocketIO(io: SocketIOServer, logger: Logger): void {
   })
 }
 
+// Setup MCP client socket handlers
+function setupMcpClientSocket(socket: Socket, logger: Logger): void {
+  logger.log('MCP client connected')
+
+  // mcp:listSessions
+  socket.on('mcp:listSessions', (callback: (response: { success: boolean; data?: BrowserSession[]; error?: string }) => void) => {
+    callback({ success: true, data: getAllSessions() })
+  })
+
+  // mcp:getPageContext
+  socket.on('mcp:getPageContext', async (sessionId: string | undefined, callback: (response: { success: boolean; data?: unknown; error?: string }) => void) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.getPageContext(10000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // mcp:triggerSelection
+  socket.on('mcp:triggerSelection', async (
+    sessionId: string | undefined,
+    mode: 'inspect' | 'selector',
+    selector: string | undefined,
+    selectorType: 'css' | 'xpath' | undefined,
+    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
+  ) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.triggerSelection(mode, selector, selectorType, 10000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // mcp:getSelectedElements
+  socket.on('mcp:getSelectedElements', async (sessionId: string | undefined, callback: (response: { success: boolean; data?: unknown; error?: string }) => void) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.getSelectedElements(15000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // mcp:captureScreenshot
+  socket.on('mcp:captureScreenshot', async (
+    sessionId: string | undefined,
+    type: 'viewport' | 'element',
+    selector: string | undefined,
+    format: 'png' | 'jpeg' | undefined,
+    quality: number | undefined,
+    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
+  ) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.captureScreenshot(type, selector, format, quality, 30000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // mcp:clearSelection
+  socket.on('mcp:clearSelection', async (sessionId: string | undefined, callback: (response: { success: boolean; error?: string }) => void) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    conn.rpc.client.clearSelection()
+    callback({ success: true })
+  })
+
+  // mcp:injectCSS
+  socket.on('mcp:injectCSS', async (
+    sessionId: string | undefined,
+    css: string,
+    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
+  ) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.injectCSS(css, 10000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // mcp:injectJS
+  socket.on('mcp:injectJS', async (
+    sessionId: string | undefined,
+    code: string,
+    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
+  ) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.injectJS(code, 15000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // mcp:getConsole
+  socket.on('mcp:getConsole', async (
+    sessionId: string | undefined,
+    clear: boolean | undefined,
+    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
+  ) => {
+    const conn = getRpcOrError(sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const result = await conn.rpc.client.getConsole(clear, 15000)
+      if (isRpcError(result)) {
+        callback({ success: false, error: result.message })
+      } else {
+        callback({ success: true, data: result })
+      }
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  socket.on('disconnect', () => {
+    logger.log('MCP client disconnected')
+  })
+}
+
+// Helper to get RPC or return error message (shared between MCP client socket and MCP server)
+function getRpcOrError(sessionId?: string): { rpc: RpcServer; sessionId: string } | { error: string } {
+  const result = getRpc(sessionId)
+  if (!result) {
+    const allSessions = getAllSessions()
+    if (allSessions.length === 0) {
+      return { error: 'No browser connected. Add the annotator script to your webpage.' }
+    }
+    return { error: `Multiple sessions available. Specify sessionId. Available: ${allSessions.map(s => s.id).join(', ')}` }
+  }
+  return { rpc: result.rpc, sessionId: result.sessionId }
+}
+
 // MCP Server setup - Stateless design
 // All tools accept optional sessionId - auto-selects if only one session exists
 function createMcpServer(): McpServer {
   const mcp = new McpServer({
-    name: 'instantcode',
+    name: 'ai-annotator',
     version: '1.0.0',
   })
 
   // Common session param for all browser-interacting tools
   const sessionIdParam = z.string().optional().describe('Browser session ID (optional if only one session)')
-
-  // Helper to get RPC or return error message
-  function getRpcOrError(sessionId?: string): { rpc: RpcServer; sessionId: string } | { error: string } {
-    const result = getRpc(sessionId)
-    if (!result) {
-      const allSessions = getAllSessions()
-      if (allSessions.length === 0) {
-        return { error: 'No browser connected. Add the annotator script to your webpage.' }
-      }
-      return { error: `Multiple sessions available. Specify sessionId. Available: ${allSessions.map(s => s.id).join(', ')}` }
-    }
-    return { rpc: result.rpc, sessionId: result.sessionId }
-  }
 
   // Helper to create text response
   function textResponse(text: string) {
@@ -387,20 +578,51 @@ function createMcpServer(): McpServer {
   return mcp
 }
 
-// MCP routes - Stateless: fresh transport per request
+// MCP routes - Session-based transport management
 function setupMcpRoutes(app: Express, logger: Logger): void {
   const mcp = createMcpServer()
+  const mcpTransports = new Map<string, StreamableHTTPServerTransport>()
 
-  // MCP endpoint - handles all MCP requests (stateless)
+  // MCP endpoint - maintains session state
   app.all('/mcp', async (req: Request, res: Response) => {
-    // Create fresh transport for each request - no session tracking
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-    })
+    const sessionId = req.headers['mcp-session-id'] as string | undefined
+
+    let transport: StreamableHTTPServerTransport
+
+    if (sessionId && mcpTransports.has(sessionId)) {
+      // Reuse existing transport for this session
+      transport = mcpTransports.get(sessionId)!
+    } else {
+      // Create new transport for new session
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+      })
+
+      // Connect MCP server to this transport
+      await mcp.connect(transport)
+
+      // Store transport after connection (session ID is generated during handleRequest)
+      transport.onclose = () => {
+        // Find and remove this transport from the map
+        for (const [id, t] of mcpTransports.entries()) {
+          if (t === transport) {
+            mcpTransports.delete(id)
+            logger.log(`MCP session closed: ${id}`)
+            break
+          }
+        }
+      }
+    }
 
     try {
-      await mcp.connect(transport)
       await transport.handleRequest(req, res, req.body)
+
+      // After first request, store transport with its session ID
+      const responseSessionId = res.getHeader('mcp-session-id') as string
+      if (responseSessionId && !mcpTransports.has(responseSessionId)) {
+        mcpTransports.set(responseSessionId, transport)
+        logger.log(`MCP session created: ${responseSessionId}`)
+      }
     } catch (error) {
       logger.error('MCP request error:', error)
       if (!res.headersSent) {
@@ -412,7 +634,7 @@ function setupMcpRoutes(app: Express, logger: Logger): void {
   // MCP capabilities endpoint (optional, for discovery)
   app.get('/mcp/info', (_req: Request, res: Response) => {
     res.json({
-      name: 'instantcode',
+      name: 'ai-annotator',
       version: '1.0.0',
       capabilities: {
         tools: true,
@@ -463,7 +685,7 @@ export async function stopServer(serverInstance: ServerInstance): Promise<void> 
     let serverComplete = false
     let rejected = false
 
-    function checkCompletion() {
+    function checkCompletion(): void {
       if (ioComplete && serverComplete && !rejected) {
         resolve()
       }
@@ -502,43 +724,8 @@ export async function stopServer(serverInstance: ServerInstance): Promise<void> 
   })
 }
 
-async function checkPortAvailable(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = new net.Socket()
-
-    const timeout = setTimeout(() => {
-      socket.destroy()
-      resolve(true)
-    }, 1000)
-
-    socket.on('connect', () => {
-      clearTimeout(timeout)
-      socket.destroy()
-      resolve(false)
-    })
-
-    socket.on('error', (err: NodeJS.ErrnoException) => {
-      clearTimeout(timeout)
-      if (err.code === 'ECONNREFUSED') {
-        resolve(true)
-      } else {
-        resolve(false)
-      }
-    })
-
-    socket.connect(port, 'localhost')
-  })
-}
-
 function listen(app: Express, port: number, listenAddress: string): Promise<Server> {
-  return new Promise(async (resolve, reject) => {
-    const isPortAvailable = await checkPortAvailable(port)
-
-    if (!isPortAvailable) {
-      reject(new Error(`Port ${port} is already in use. Please choose a different port.`))
-      return
-    }
-
+  return new Promise((resolve, reject) => {
     const server = app.listen(port, listenAddress, () => resolve(server))
     server.on('error', (error) => {
       reject(error)

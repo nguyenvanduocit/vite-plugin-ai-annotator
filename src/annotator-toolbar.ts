@@ -1,8 +1,8 @@
 /**
- * InstantCode Annotator Toolbar
+ * AI Annotator Toolbar
  *
  * Browser component that:
- * 1. Connects to InstantCode server via Socket.IO
+ * 1. Connects to AI Annotator server via Socket.IO
  * 2. Handles RPC requests from server (element selection, screenshots, etc.)
  * 3. Shows toolbar UI with inspect/clear buttons
  * 4. Shows commentPopover for adding comments when elements are selected
@@ -14,11 +14,13 @@ import { io, Socket } from 'socket.io-client'
 import { toBlob } from 'html-to-image'
 import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/dom'
 
-import { createElementSelectionManager, type ElementSelectionManager } from './annotator/selection'
+import { createElementSelectionManager, type ElementSelectionManager, type SelectedElementInfo } from './annotator/selection'
 import { createInspectionManager, type InspectionManager } from './annotator/inspection'
 import { findNearestComponent } from './annotator/detectors'
 import type { ElementData, PageContext, SelectionResult, ScreenshotResult, ConsoleEntry, InjectResult } from './rpc/define'
 import { createRpcClient, type RpcClient } from './rpc/client.generated'
+
+const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug'] as const
 
 interface PopoverState {
   visible: boolean
@@ -36,7 +38,9 @@ export class AnnotatorToolbar extends LitElement {
   @state() private selectionCount = 0
   @state() private isInspecting = false
   @state() private commentPopover: PopoverState = { visible: false, element: null, comment: '' }
+  @state() private toastMessage = ''
   private popoverCleanup: (() => void) | null = null
+  private toastTimeout: ReturnType<typeof setTimeout> | null = null
 
   private socket: Socket | null = null
   private rpc: RpcClient | null = null
@@ -56,6 +60,7 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .toolbar {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -110,13 +115,26 @@ export class AnnotatorToolbar extends LitElement {
       margin: 0 4px;
     }
 
-    .selection-badge {
+    .btn-with-badge {
+      position: relative;
+    }
+
+    .badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
       background: #3b82f6;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 11px;
+      border-radius: 8px;
+      font-size: 10px;
       font-weight: 600;
       color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
     }
 
     .error-message {
@@ -134,116 +152,112 @@ export class AnnotatorToolbar extends LitElement {
       flex-shrink: 0;
     }
 
-    /* Popover styles */
+    /* Minimal Popover */
     .popover {
       position: fixed;
       top: 0;
       left: 0;
       z-index: 1000000;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-      padding: 12px;
-      min-width: 280px;
-      max-width: 350px;
-    }
-
-    .popover-header {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid #eee;
+      align-items: stretch;
+      background: #1a1a1a;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      animation: popover-in 0.15s ease-out;
     }
 
-    .popover-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+    @keyframes popover-in {
+      from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-4px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
     }
 
-    .popover-title .tag {
-      background: #f0f0f0;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-      color: #666;
-      font-weight: 500;
-    }
-
-    .popover-close {
-      background: none;
+    .popover-input {
+      flex: 1;
+      min-width: 180px;
+      max-width: 260px;
+      padding: 10px 12px;
       border: none;
-      color: #999;
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .popover-close:hover {
-      background: #f0f0f0;
-      color: #333;
-    }
-
-    .popover-close svg {
-      width: 16px;
-      height: 16px;
-    }
-
-    .popover-textarea {
-      width: 100%;
-      min-height: 80px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 10px;
+      background: transparent;
+      color: #fff;
       font-size: 13px;
       font-family: inherit;
-      resize: vertical;
-      box-sizing: border-box;
+      outline: none;
     }
 
-    .popover-textarea:focus {
-      outline: none;
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    .popover-input::placeholder {
+      color: #555;
     }
 
     .popover-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 10px;
+      border-left: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .popover-btn {
-      padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-
-    .popover-btn-danger {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 100%;
+      border: none;
       background: transparent;
-      border: 1px solid #ef4444;
-      color: #ef4444;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.12s ease;
     }
 
-    .popover-btn-danger:hover {
-      background: #ef4444;
-      color: white;
+    .popover-btn:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+    }
+
+    .popover-btn.danger:hover {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+    }
+
+    .popover-btn svg {
+      width: 14px;
+      height: 14px;
     }
 
     .hidden {
       display: none;
+    }
+
+    /* Toast */
+    .toast {
+      position: absolute;
+      bottom: 100%;
+      right: 0;
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.9);
+      border-radius: 6px;
+      font-size: 12px;
+      color: #10b981;
+      white-space: nowrap;
+      animation: toast-in 0.2s ease-out;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
   `
 
@@ -267,28 +281,30 @@ export class AnnotatorToolbar extends LitElement {
       this.showCommentPopoverForElement(element)
     })
 
-    this.inspectionManager = createInspectionManager(
-      (element) => this.handleElementSelected(element),
-      (element) => this.shouldIgnoreElement(element),
-      (element) => this.selectionManager?.hasElement(element) || false
-    )
+    this.inspectionManager = createInspectionManager({
+      onElementSelect: (element) => this.handleElementSelected(element),
+      shouldIgnoreElement: (element) => this.shouldIgnoreElement(element),
+      isElementSelected: (element) => this.selectionManager?.hasElement(element) || false,
+      onEscape: () => this.exitInspectingMode(),
+      onCopy: () => this.copySelectedElements(),
+    })
   }
 
   private initializeConsoleCapture() {
-    const methods: Array<'log' | 'info' | 'warn' | 'error' | 'debug'> = ['log', 'info', 'warn', 'error', 'debug']
-
-    methods.forEach((method) => {
+    CONSOLE_METHODS.forEach((method) => {
       this.originalConsoleMethods[method] = console[method].bind(console)
 
       console[method] = (...args: unknown[]) => {
-        // Store in buffer
+        // Store in buffer with size limit per entry
+        const MAX_ARG_LENGTH = 10000
         this.consoleBuffer.push({
           type: method,
           args: args.map(arg => {
             try {
-              return typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+              const str = typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+              return str.length > MAX_ARG_LENGTH ? str.slice(0, MAX_ARG_LENGTH) + '...[truncated]' : str
             } catch {
-              return String(arg)
+              return '[circular or unserializable]'
             }
           }),
           timestamp: Date.now()
@@ -306,8 +322,7 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private restoreConsoleMethods() {
-    const methods: Array<'log' | 'info' | 'warn' | 'error' | 'debug'> = ['log', 'info', 'warn', 'error', 'debug']
-    methods.forEach((method) => {
+    CONSOLE_METHODS.forEach((method) => {
       if (this.originalConsoleMethods[method]) {
         console[method] = this.originalConsoleMethods[method] as (...args: unknown[]) => void
       }
@@ -393,12 +408,11 @@ export class AnnotatorToolbar extends LitElement {
     )
 
     // Add comments to elements
-    const addComments = (items: ElementData[], selectedElements: Map<Element, any>) => {
+    const addComments = (items: ElementData[], selectedElements: Map<Element, SelectedElementInfo>) => {
       for (const item of items) {
         // Find element by index
-        for (const [element] of selectedElements) {
-          const info = selectedElements.get(element)
-          if (info?.index === item.index) {
+        for (const [element, info] of selectedElements) {
+          if (info.index === item.index) {
             const comment = this.elementComments.get(element)
             if (comment) {
               item.comment = comment
@@ -524,7 +538,7 @@ export class AnnotatorToolbar extends LitElement {
   private injectCSS(css: string): InjectResult {
     try {
       const style = document.createElement('style')
-      style.setAttribute('data-injected-by', 'instantcode')
+      style.setAttribute('data-injected-by', 'ai-annotator')
       style.textContent = css
       document.head.appendChild(style)
       return { success: true }
@@ -624,15 +638,20 @@ export class AnnotatorToolbar extends LitElement {
     // Setup floating-ui positioning after render
     this.updateComplete.then(() => {
       const popoverEl = this.shadowRoot?.querySelector('.popover') as HTMLElement
+      const inputEl = this.shadowRoot?.querySelector('.popover-input') as HTMLInputElement
       if (!popoverEl || !element) return
+
+      // Auto-focus input
+      inputEl?.focus()
 
       this.popoverCleanup = autoUpdate(element, popoverEl, () => {
         computePosition(element, popoverEl, {
-          placement: 'bottom',
+          strategy: 'fixed',
+          placement: 'bottom-start',
           middleware: [
-            offset(10),
-            flip({ fallbackPlacements: ['top', 'right', 'left'] }),
-            shift({ padding: 10 }),
+            offset(8),
+            flip({ fallbackPlacements: ['top-start', 'bottom-end', 'top-end', 'right', 'left'] }),
+            shift({ padding: 8 }),
           ],
         }).then(({ x, y }) => {
           Object.assign(popoverEl.style, {
@@ -654,6 +673,17 @@ export class AnnotatorToolbar extends LitElement {
     }
   }
 
+  private handlePopoverInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      this.hideCommentPopover()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      this.hideCommentPopover()
+    }
+  }
+
   private hideCommentPopover() {
     document.removeEventListener('keydown', this.handlePopoverKeydown)
     if (this.popoverCleanup) {
@@ -664,7 +694,7 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private handlePopoverInput(e: Event) {
-    const target = e.target as HTMLTextAreaElement
+    const target = e.target as HTMLInputElement
     const comment = target.value
     const element = this.commentPopover.element
 
@@ -684,9 +714,22 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private shouldIgnoreElement(element: Element): boolean {
-    if (element.closest('annotator-toolbar')) return true
-    if (element.classList.contains('annotator-badge')) return true
-    if (element.classList.contains('annotator-ignore')) return true
+    // Check if element is inside annotator-toolbar (including shadow DOM)
+    let current: Node | null = element
+    while (current) {
+      if (current instanceof Element) {
+        if (current.tagName.toLowerCase() === 'annotator-toolbar') return true
+        if (current.classList.contains('annotator-badge')) return true
+        if (current.classList.contains('annotator-ignore')) return true
+      }
+      // Traverse up: if in shadow DOM, go to host; otherwise go to parent
+      const parent: ParentNode | null = current.parentNode
+      if (parent instanceof ShadowRoot) {
+        current = parent.host
+      } else {
+        current = parent as Node | null
+      }
+    }
     return false
   }
 
@@ -704,17 +747,40 @@ export class AnnotatorToolbar extends LitElement {
 
   private log(...args: unknown[]) {
     if (this.verbose) {
-      console.log('[InstantCode]', ...args)
+      console.log('[AI Annotator]', ...args)
     }
   }
 
-  private toggleInspect() {
+  private exitInspectingMode() {
     if (this.isInspecting) {
       this.inspectionManager?.exitInspectionMode()
       this.isInspecting = false
       if (this.commentPopover.visible) {
         this.hideCommentPopover()
       }
+    }
+  }
+
+  private async copySelectedElements() {
+    const elements = this.getSelectedElements()
+    if (elements.length === 0) {
+      this.showToast('No elements selected')
+      return
+    }
+
+    const text = JSON.stringify(elements, null, 2)
+    try {
+      await navigator.clipboard.writeText(text)
+      this.showToast(`Copied ${elements.length} element(s)`)
+    } catch (error) {
+      this.showToast('Failed to copy')
+      this.log('Failed to copy:', error)
+    }
+  }
+
+  private toggleInspect() {
+    if (this.isInspecting) {
+      this.exitInspectingMode()
     } else {
       this.inspectionManager?.enterInspectionMode()
       this.isInspecting = true
@@ -722,6 +788,7 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private handleClearClick() {
+    this.exitInspectingMode()
     this.clearSelection()
     if (this.socket?.connected) {
       this.socket.emit('selectionChanged', {
@@ -756,6 +823,39 @@ export class AnnotatorToolbar extends LitElement {
     </svg>`
   }
 
+  private renderClipboardIcon() {
+    return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+    </svg>`
+  }
+
+  private showToast(message: string) {
+    if (this.toastTimeout) {
+      clearTimeout(this.toastTimeout)
+    }
+    this.toastMessage = message
+    this.toastTimeout = setTimeout(() => {
+      this.toastMessage = ''
+    }, 2000)
+  }
+
+  private async copySessionId() {
+    this.exitInspectingMode()
+    if (!this.sessionId) {
+      this.showToast('No session ID')
+      return
+    }
+    const text = `use annotator tool (session: ${this.sessionId}) to read my live feedback`
+    try {
+      await navigator.clipboard.writeText(text)
+      this.showToast('Copied!')
+      this.log('Copied to clipboard:', text)
+    } catch (error) {
+      this.showToast('Failed to copy')
+      this.log('Failed to copy:', error)
+    }
+  }
+
   private renderErrorIcon() {
     return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -763,7 +863,8 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private openHelpPage() {
-    window.open('https://instantcode.dev', '_blank')
+    this.exitInspectingMode()
+    window.open('https://ai-annotator.dev', '_blank')
   }
 
   render() {
@@ -772,7 +873,7 @@ export class AnnotatorToolbar extends LitElement {
         <div class="toolbar">
           <div class="error-message">
             ${this.renderErrorIcon()}
-            <span>Cannot connect to InstantCode server</span>
+            <span>Cannot connect to AI Annotator server</span>
           </div>
         </div>
       `
@@ -780,11 +881,6 @@ export class AnnotatorToolbar extends LitElement {
 
     return html`
       <div class="toolbar">
-        ${this.selectionCount > 0 ? html`
-          <span class="selection-badge">${this.selectionCount}</span>
-          <div class="divider"></div>
-        ` : ''}
-
         <button
           class="toolbar-btn ${this.isInspecting ? 'active' : ''}"
           @click=${this.toggleInspect}
@@ -793,16 +889,27 @@ export class AnnotatorToolbar extends LitElement {
           ${this.renderCursorIcon()}
         </button>
 
-        <button
-          class="toolbar-btn"
-          @click=${this.handleClearClick}
-          title="Clear all selections"
-          ?disabled=${this.selectionCount === 0}
-        >
-          ${this.renderTrashIcon()}
-        </button>
+        <div class="btn-with-badge">
+          <button
+            class="toolbar-btn"
+            @click=${this.handleClearClick}
+            title="Clear all selections"
+            ?disabled=${this.selectionCount === 0}
+          >
+            ${this.renderTrashIcon()}
+          </button>
+          ${this.selectionCount > 0 ? html`<span class="badge">${this.selectionCount}</span>` : ''}
+        </div>
 
         <div class="divider"></div>
+
+        <button
+          class="toolbar-btn"
+          @click=${this.copySessionId}
+          title="Copy session ID"
+        >
+          ${this.renderClipboardIcon()}
+        </button>
 
         <button
           class="toolbar-btn"
@@ -811,27 +918,27 @@ export class AnnotatorToolbar extends LitElement {
         >
           ${this.renderHelpIcon()}
         </button>
+
+        ${this.toastMessage ? html`<div class="toast">${this.toastMessage}</div>` : ''}
       </div>
 
       ${this.commentPopover.visible ? html`
         <div class="popover">
-          <div class="popover-header">
-            <div class="popover-title">
-              ${this.elementComments.has(this.commentPopover.element!) ? 'Edit Comment' : 'Add Comment'}
-              <span class="tag">${(this.commentPopover.element as Element)?.tagName?.toLowerCase() || 'element'}</span>
-            </div>
-            <button class="popover-close" @click=${this.hideCommentPopover}>
-              ${this.renderCloseIcon()}
-            </button>
-          </div>
-          <textarea
-            class="popover-textarea"
-            placeholder="Describe what you want to change about this element..."
+          <input
+            type="text"
+            class="popover-input"
+            placeholder="Add a note..."
             .value=${this.commentPopover.comment}
             @input=${this.handlePopoverInput}
-          ></textarea>
+            @keydown=${this.handlePopoverInputKeydown}
+          />
           <div class="popover-actions">
-            <button class="popover-btn popover-btn-danger" @click=${this.removeSelectedElement}>Remove</button>
+            <button class="popover-btn danger" @click=${this.removeSelectedElement} title="Remove selection">
+              ${this.renderTrashIcon()}
+            </button>
+            <button class="popover-btn" @click=${this.hideCommentPopover} title="Close (Esc)">
+              ${this.renderCloseIcon()}
+            </button>
           </div>
         </div>
       ` : ''}

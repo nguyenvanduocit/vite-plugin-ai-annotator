@@ -5,31 +5,10 @@ AI-powered element annotator for Vite - Pick elements and get instant AI code mo
 [![Watch the Tutorial](https://img.youtube.com/vi/OuKnfCbmfTg/maxresdefault.jpg)](https://youtu.be/OuKnfCbmfTg)
 > 📺 **[Watch the Tutorial Video](https://youtu.be/OuKnfCbmfTg)** - See the plugin in action!
 
-## Easy Setup with Claude Code Plugin
+## What is this?
 
-Don't want to manually install? Install the **Claude Code plugin** and let AI set everything up for you:
+Point at any element on your webapp, type a request, and AI modifies your code instantly.
 
-```bash
-claude plugin install claude-annotator-plugin@nguyenvanduocit
-```
-
-Then just ask Claude: *"Set up ai-annotator for my project"* - it will handle the rest!
-
-## Manual Setup
-
-### Requirements
-
-This plugin requires **Claude Code** CLI:
-
-```bash
-bun install -g @anthropic-ai/claude-code
-```
-
-> Claude Code is Anthropic's official CLI tool. [Learn more](https://docs.anthropic.com/en/docs/claude-code)
-
-## What can this plugin help you?
-
-After installing the plugin, you can:
 - **Point directly at any element** on your webapp
 - **Type a short request** like "make it bigger", "center it", "change color to blue"
 - **Wait for AI to modify your code** - it automatically finds and updates the source files
@@ -37,17 +16,40 @@ After installing the plugin, you can:
 
 > Save cognitive load, because it's precious.
 
-## Quick Start
+## Why use it?
 
-This is an **ESM-only Vite plugin**. Installation is simple!
+Traditional workflow: inspect element → find source file → locate the code → make changes → check results.
 
-### 1. Install
+With this plugin: point → describe → done.
+
+Works with all Vite-supported frameworks:
+- ⚛️ **React** - Detects components, props, and state
+- 🟢 **Vue** - Understands composition/options API
+- 🅰️ **Angular** - Recognizes components and directives
+- 🟠 **Svelte** - Identifies components and stores
+- 📄 **Vanilla JS** - Works with plain HTML/CSS/JS
+
+## Installation
+
+### Option 1: Automatic Setup (Recommended)
+
+Install the **Claude Code plugin** and let AI set everything up for you:
+
+```bash
+claude plugin install claude-annotator-plugin@nguyenvanduocit
+```
+
+Then ask Claude: *"Set up ai-annotator for my project"* - it handles the rest!
+
+### Option 2: Manual Setup
+
+#### Step 1: Install the package
 
 ```bash
 bun add -d vite-plugin-ai-annotator
 ```
 
-### 2. Add to Your Vite Config
+#### Step 2: Add to your Vite config
 
 ```typescript
 import { defineConfig } from 'vite';
@@ -60,15 +62,23 @@ export default defineConfig({
 });
 ```
 
-### 3. Start Your Dev Server
+#### Step 3: Add MCP to Claude Code
+
+```bash
+claude mcp add annotator -- npx vite-plugin-ai-annotator
+```
+
+#### Step 4: Start your dev server
 
 ```bash
 bun dev
 ```
 
-That's it! The annotator toolbar will automatically appear in your application.
+The annotator toolbar will automatically appear in your application.
 
-## Plugin Options
+## Port Configuration
+
+Default port is `7318`. You can customize it:
 
 ```typescript
 annotator({
@@ -77,19 +87,9 @@ annotator({
 })
 ```
 
-## Framework Support
+### Team Collaboration
 
-Works with all Vite-supported frameworks:
-
-- ⚛️ **React** - Detects components, props, and state
-- 🟢 **Vue** - Understands composition/options API
-- 🅰️ **Angular** - Recognizes components and directives
-- 🟠 **Svelte** - Identifies components and stores
-- 📄 **Vanilla JS** - Works with plain HTML/CSS/JS
-
-## Team Collaboration
-
-Want your entire team to modify the app? Configure for network access:
+For network access (multiple team members modifying the same app):
 
 ```typescript
 annotator({
@@ -99,10 +99,10 @@ annotator({
 })
 ```
 
-Now anyone on your team can:
+Team members can:
 1. Open the app at `https://myapp.com`
 2. Use the annotator toolbar to modify the UI
-3. Changes are saved directly to the source files
-4. Everyone sees updates in real-time!
+3. Changes save directly to source files
+4. Everyone sees updates in real-time
 
 **Happy coding! 🚀**
