@@ -162,8 +162,9 @@ export class AnnotatorToolbar extends LitElement {
       display: flex;
       align-items: stretch;
       background: #1a1a1a;
+      border: 1px solid rgba(99, 102, 241, 0.5);
       border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.3), 0 0 40px rgba(99, 102, 241, 0.1);
       overflow: hidden;
       animation: popover-in 0.15s ease-out;
     }
@@ -183,6 +184,8 @@ export class AnnotatorToolbar extends LitElement {
       flex: 1;
       min-width: 180px;
       max-width: 260px;
+      min-height: 38px;
+      max-height: 120px;
       padding: 10px 12px;
       border: none;
       background: transparent;
@@ -190,6 +193,9 @@ export class AnnotatorToolbar extends LitElement {
       font-size: 13px;
       font-family: inherit;
       outline: none;
+      resize: none;
+      overflow-y: auto;
+      line-height: 1.4;
     }
 
     .popover-input::placeholder {
@@ -639,11 +645,15 @@ export class AnnotatorToolbar extends LitElement {
     // Setup floating-ui positioning after render
     this.updateComplete.then(() => {
       const popoverEl = this.shadowRoot?.querySelector('.popover') as HTMLElement
-      const inputEl = this.shadowRoot?.querySelector('.popover-input') as HTMLInputElement
+      const textareaEl = this.shadowRoot?.querySelector('.popover-input') as HTMLTextAreaElement
       if (!popoverEl || !element) return
 
-      // Auto-focus input
-      inputEl?.focus()
+      // Auto-focus and auto-resize textarea
+      if (textareaEl) {
+        textareaEl.focus()
+        textareaEl.style.height = 'auto'
+        textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + 'px'
+      }
 
       this.popoverCleanup = autoUpdate(element, popoverEl, () => {
         computePosition(element, popoverEl, {
@@ -675,7 +685,7 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private handlePopoverInputKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       this.hideCommentPopover()
     } else if (e.key === 'Escape') {
@@ -695,9 +705,13 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private handlePopoverInput(e: Event) {
-    const target = e.target as HTMLInputElement
+    const target = e.target as HTMLTextAreaElement
     const comment = target.value
     const element = this.commentPopover.element
+
+    // Auto-resize textarea
+    target.style.height = 'auto'
+    target.style.height = Math.min(target.scrollHeight, 120) + 'px'
 
     this.commentPopover = { ...this.commentPopover, comment }
 
@@ -769,7 +783,7 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
 
-    const text = `I have selected ${elements.length} element(s) in the browser. Use the \`annotator_get_selected_elements\` tool to retrieve them and modify the code.`
+    const text = `I have selected ${elements.length} feedback item(s) in the browser. Use the \`annotator_get_feedback\` tool to retrieve them and modify the code.`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast(`Copied ${elements.length} element(s)`)
@@ -846,7 +860,7 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No session ID')
       return
     }
-    const text = `I have selected elements in the browser (session: ${this.sessionId}). Use the \`annotator_get_selected_elements\` tool to retrieve them and modify the code.`
+    const text = `I have feedback in the browser (session: ${this.sessionId}). Use the \`annotator_get_feedback\` tool to retrieve them.`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast('Copied!')
@@ -925,14 +939,14 @@ export class AnnotatorToolbar extends LitElement {
 
       ${this.commentPopover.visible ? html`
         <div class="popover">
-          <input
-            type="text"
+          <textarea
             class="popover-input"
-            placeholder="Add a note..."
+            placeholder="Add a note... (⌘↵ to close)"
             .value=${this.commentPopover.comment}
             @input=${this.handlePopoverInput}
             @keydown=${this.handlePopoverInputKeydown}
-          />
+            rows="1"
+          ></textarea>
           <div class="popover-actions">
             <button class="popover-btn danger" @click=${this.removeSelectedElement} title="Remove selection">
               ${this.renderTrashIcon()}
