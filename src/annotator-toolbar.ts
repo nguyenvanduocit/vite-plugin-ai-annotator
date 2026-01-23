@@ -66,8 +66,9 @@ export class AnnotatorToolbar extends LitElement {
       gap: 4px;
       padding: 6px;
       background: rgba(0, 0, 0, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
     }
 
     .toolbar-btn {
