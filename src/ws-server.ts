@@ -81,6 +81,38 @@ function saveScreenshot(base64: string, format: 'png' | 'jpeg'): string {
   return filePath
 }
 
+type FeedbackField = 'attributes' | 'styles' | 'component' | 'children'
+const BASIC_FIELDS = ['index', 'tagName', 'xpath', 'cssSelector', 'textContent'] as const
+
+function filterFeedbackFields(
+  elements: Record<string, unknown>[],
+  fields?: FeedbackField[]
+): Record<string, unknown>[] {
+  return elements.map((el) => {
+    const result: Record<string, unknown> = {}
+    // basic fields and comment are always included
+    if ('comment' in el) result.comment = el.comment
+    for (const f of BASIC_FIELDS) {
+      if (f in el) result[f] = el[f]
+    }
+
+    // additional fields only if explicitly requested
+    if (fields?.includes('attributes') && 'attributes' in el) {
+      result.attributes = el.attributes
+    }
+    if (fields?.includes('styles') && 'computedStyles' in el) {
+      result.computedStyles = el.computedStyles
+    }
+    if (fields?.includes('component') && 'componentData' in el) {
+      result.componentData = el.componentData
+    }
+    if (fields?.includes('children') && 'children' in el) {
+      result.children = el.children
+    }
+    return result
+  })
+}
+
 function setupRoutes(app: Express, publicAddress: string, verbose: boolean): void {
   app.get('/annotator-toolbar.js', (_req, res) => {
     try {
@@ -448,22 +480,29 @@ function createMcpServer(): McpServer {
   )
 
   // Tool: annotator_get_feedback
+  const feedbackFieldsEnum = z.enum(['attributes', 'styles', 'component', 'children'])
   mcp.tool(
     'annotator_get_feedback',
     'Get data about currently selected feedback items in the browser. Returns details of UI elements the user has marked for feedback.',
-    { sessionId: sessionIdParam },
-    async ({ sessionId }) => {
+    {
+      sessionId: sessionIdParam,
+      fields: z.array(feedbackFieldsEnum).optional().describe(
+        'Additional fields to include: attributes, styles (computedStyles), component (componentData), children. By default only basic fields (index, tagName, xpath, cssSelector, textContent) and comment are returned.'
+      ),
+    },
+    async ({ sessionId, fields }) => {
       const conn = getRpcOrError(sessionId)
       if ('error' in conn) return textResponse(conn.error)
 
       const result = await conn.rpc.client.getSelectedElements(15000)
       if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
 
-      return textResponse(
-        result.length > 0
-          ? JSON.stringify(result, null, 2)
-          : 'No feedback selected. Use annotator_select_feedback first.'
-      )
+      if (result.length === 0) {
+        return textResponse('No feedback selected. Use annotator_select_feedback first.')
+      }
+
+      const filtered = filterFeedbackFields(result as unknown as Record<string, unknown>[], fields)
+      return textResponse(JSON.stringify(filtered, null, 2))
     }
   )
 

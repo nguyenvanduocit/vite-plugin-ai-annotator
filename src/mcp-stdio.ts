@@ -73,14 +73,61 @@ function saveScreenshot(base64: string, format: 'png' | 'jpeg'): string {
   return filePath
 }
 
+type FeedbackField = 'attributes' | 'styles' | 'component' | 'children'
+const BASIC_FIELDS = ['index', 'tagName', 'xpath', 'cssSelector', 'textContent'] as const
+
+function filterFeedbackFields(
+  elements: Record<string, unknown>[],
+  fields?: FeedbackField[]
+): Record<string, unknown>[] {
+  return elements.map((el) => {
+    const result: Record<string, unknown> = {}
+    // basic fields and comment are always included
+    if ('comment' in el) result.comment = el.comment
+    for (const f of BASIC_FIELDS) {
+      if (f in el) result[f] = el[f]
+    }
+
+    // additional fields only if explicitly requested
+    if (fields?.includes('attributes') && 'attributes' in el) {
+      result.attributes = el.attributes
+    }
+    if (fields?.includes('styles') && 'computedStyles' in el) {
+      result.computedStyles = el.computedStyles
+    }
+    if (fields?.includes('component') && 'componentData' in el) {
+      result.componentData = el.componentData
+    }
+    if (fields?.includes('children') && 'children' in el) {
+      result.children = el.children
+    }
+    return result
+  })
+}
+
+// Reconnection state
+let reconnectAttempts = 0
+const MAX_RECONNECT_ATTEMPTS = 20
+const RECONNECT_DELAY_MS = 10000
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let pendingReconnect: (() => void) | null = null
+
+// Trigger immediate reconnect if waiting
+function triggerImmediateReconnect(): void {
+  if (reconnectTimer && pendingReconnect) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+    pendingReconnect()
+    pendingReconnect = null
+  }
+}
+
 // Create socket connection to server
 function createServerConnection(serverUrl: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const socket = io(serverUrl, {
       transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
+      reconnection: false, // We handle reconnection manually
       query: { clientType: 'mcp' }
     })
 
@@ -91,6 +138,7 @@ function createServerConnection(serverUrl: string): Promise<Socket> {
 
     socket.on('connect', () => {
       clearTimeout(timeout)
+      reconnectAttempts = 0 // Reset on successful connect
       resolve(socket)
     })
 
@@ -99,6 +147,36 @@ function createServerConnection(serverUrl: string): Promise<Socket> {
       reject(new Error(`Failed to connect: ${err.message}`))
     })
   })
+}
+
+// Reconnect with retry logic
+async function reconnectWithRetry(serverUrl: string, onReconnect: (socket: Socket) => void): Promise<void> {
+  while (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    reconnectAttempts++
+    console.error(`Reconnecting to server... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
+
+    try {
+      const newSocket = await createServerConnection(serverUrl)
+      console.error('Reconnected to server successfully')
+      onReconnect(newSocket)
+      return
+    } catch {
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error('Max reconnection attempts reached. Exiting.')
+        process.exit(1)
+      }
+
+      // Wait with interruptible delay
+      await new Promise<void>((resolve) => {
+        pendingReconnect = resolve
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null
+          pendingReconnect = null
+          resolve()
+        }, RECONNECT_DELAY_MS)
+      })
+    }
+  }
 }
 
 // Call server method with timeout
@@ -119,13 +197,33 @@ function callServer<T>(socket: Socket, event: string, args: unknown[] = [], time
   })
 }
 
+// Socket state management
+let currentSocket: Socket | null = null
+let isReconnecting = false
+
+function setupSocketHandlers(socket: Socket, serverUrl: string): void {
+  socket.on('disconnect', (reason) => {
+    console.error(`Disconnected from server: ${reason}`)
+    currentSocket = null
+
+    if (!isReconnecting && reason !== 'io client disconnect') {
+      isReconnecting = true
+      reconnectWithRetry(serverUrl, (newSocket) => {
+        currentSocket = newSocket
+        isReconnecting = false
+        setupSocketHandlers(newSocket, serverUrl)
+      })
+    }
+  })
+}
+
 async function main() {
   const { serverUrl } = parseArgs()
 
   // Connect to AI Annotator server
-  let socket: Socket
   try {
-    socket = await createServerConnection(serverUrl)
+    currentSocket = await createServerConnection(serverUrl)
+    setupSocketHandlers(currentSocket, serverUrl)
   } catch (err) {
     console.error(`Failed to connect to AI Annotator server at ${serverUrl}`)
     console.error('Make sure the server is running: bunx vite-plugin-ai-annotator')
@@ -144,6 +242,15 @@ async function main() {
     content: [{ type: 'text' as const, text }]
   })
 
+  // Helper to get socket with reconnect trigger
+  const getSocket = (): Socket => {
+    if (!currentSocket?.connected) {
+      triggerImmediateReconnect()
+      throw new Error('Not connected to server. Reconnecting...')
+    }
+    return currentSocket
+  }
+
   // Session param
   const sessionIdParam = z.string().optional().describe('Browser session ID (optional if only one session)')
 
@@ -154,7 +261,7 @@ async function main() {
     {},
     async () => {
       try {
-        const sessions = await callServer<BrowserSession[]>(socket, 'mcp:listSessions')
+        const sessions = await callServer<BrowserSession[]>(getSocket(), 'mcp:listSessions')
         return textResponse(
           sessions.length > 0
             ? JSON.stringify(sessions, null, 2)
@@ -173,7 +280,7 @@ async function main() {
     { sessionId: sessionIdParam },
     async ({ sessionId }) => {
       try {
-        const result = await callServer(socket, 'mcp:getPageContext', [sessionId])
+        const result = await callServer(getSocket(), 'mcp:getPageContext', [sessionId])
         return textResponse(JSON.stringify(result, null, 2))
       } catch (err) {
         return textResponse(`Error: ${err instanceof Error ? err.message : String(err)}`)
@@ -194,7 +301,7 @@ async function main() {
     async ({ sessionId, mode, selector, selectorType }) => {
       try {
         const result = await callServer<{ success: boolean; count: number; error?: string }>(
-          socket, 'mcp:triggerSelection', [sessionId, mode, selector, selectorType]
+          getSocket(), 'mcp:triggerSelection', [sessionId, mode, selector, selectorType]
         )
         return textResponse(
           result.success
@@ -208,18 +315,25 @@ async function main() {
   )
 
   // Tool: annotator_get_feedback
+  const feedbackFieldsEnum = z.enum(['attributes', 'styles', 'component', 'children'])
   mcp.tool(
     'annotator_get_feedback',
     'Get data about currently selected feedback items in the browser. Returns details of UI elements the user has marked for feedback.',
-    { sessionId: sessionIdParam },
-    async ({ sessionId }) => {
+    {
+      sessionId: sessionIdParam,
+      fields: z.array(feedbackFieldsEnum).optional().describe(
+        'Additional fields to include: attributes, styles (computedStyles), component (componentData), children. By default only basic fields (index, tagName, xpath, cssSelector, textContent) and comment are returned.'
+      ),
+    },
+    async ({ sessionId, fields }) => {
       try {
-        const result = await callServer<unknown[]>(socket, 'mcp:getSelectedElements', [sessionId])
-        return textResponse(
-          result.length > 0
-            ? JSON.stringify(result, null, 2)
-            : 'No feedback selected. Use annotator_select_feedback first.'
-        )
+        const result = await callServer<Record<string, unknown>[]>(getSocket(), 'mcp:getSelectedElements', [sessionId])
+        if (result.length === 0) {
+          return textResponse('No feedback selected. Use annotator_select_feedback first.')
+        }
+
+        const filtered = filterFeedbackFields(result, fields)
+        return textResponse(JSON.stringify(filtered, null, 2))
       } catch (err) {
         return textResponse(`Error: ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -240,7 +354,7 @@ async function main() {
     async ({ sessionId, type, selector, format, quality }) => {
       try {
         const result = await callServer<{ success: boolean; base64?: string; error?: string }>(
-          socket, 'mcp:captureScreenshot', [sessionId, type, selector, format, quality], 30000
+          getSocket(), 'mcp:captureScreenshot', [sessionId, type, selector, format, quality], 30000
         )
         if (result.success && result.base64) {
           const filePath = saveScreenshot(result.base64, format)
@@ -260,7 +374,7 @@ async function main() {
     { sessionId: sessionIdParam },
     async ({ sessionId }) => {
       try {
-        await callServer(socket, 'mcp:clearSelection', [sessionId])
+        await callServer(getSocket(), 'mcp:clearSelection', [sessionId])
         return textResponse('Feedback cleared.')
       } catch (err) {
         return textResponse(`Error: ${err instanceof Error ? err.message : String(err)}`)
@@ -279,7 +393,7 @@ async function main() {
     async ({ sessionId, css }) => {
       try {
         const result = await callServer<{ success: boolean; error?: string }>(
-          socket, 'mcp:injectCSS', [sessionId, css]
+          getSocket(), 'mcp:injectCSS', [sessionId, css]
         )
         return textResponse(
           result.success ? 'CSS injected successfully.' : `CSS injection failed: ${result.error}`
@@ -301,7 +415,7 @@ async function main() {
     async ({ sessionId, code }) => {
       try {
         const result = await callServer<{ success: boolean; result?: unknown; error?: string }>(
-          socket, 'mcp:injectJS', [sessionId, code]
+          getSocket(), 'mcp:injectJS', [sessionId, code]
         )
         if (result.success) {
           return textResponse(
@@ -327,7 +441,7 @@ async function main() {
     },
     async ({ sessionId, clear }) => {
       try {
-        const result = await callServer<unknown[]>(socket, 'mcp:getConsole', [sessionId, clear])
+        const result = await callServer<unknown[]>(getSocket(), 'mcp:getConsole', [sessionId, clear])
         return textResponse(
           result.length > 0 ? JSON.stringify(result, null, 2) : 'No console logs captured.'
         )
@@ -343,12 +457,12 @@ async function main() {
 
   // Handle cleanup
   process.on('SIGINT', () => {
-    socket.disconnect()
+    currentSocket?.disconnect()
     process.exit(0)
   })
 
   process.on('SIGTERM', () => {
-    socket.disconnect()
+    currentSocket?.disconnect()
     process.exit(0)
   })
 }
