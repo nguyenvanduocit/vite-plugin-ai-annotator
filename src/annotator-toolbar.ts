@@ -159,13 +159,10 @@ export class AnnotatorToolbar extends LitElement {
       top: 0;
       left: 0;
       z-index: 1000000;
-      display: flex;
-      align-items: stretch;
       background: #1a1a1a;
       border: 1px solid rgba(99, 102, 241, 0.5);
       border-radius: 8px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.3), 0 0 40px rgba(99, 102, 241, 0.1);
-      overflow: hidden;
       animation: popover-in 0.15s ease-out;
     }
 
@@ -181,12 +178,11 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-input {
-      flex: 1;
-      min-width: 180px;
-      max-width: 260px;
-      min-height: 38px;
+      width: 240px;
+      min-height: 52px;
       max-height: 120px;
       padding: 10px 12px;
+      padding-bottom: 32px;
       border: none;
       background: transparent;
       color: #fff;
@@ -203,37 +199,41 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-actions {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
       display: flex;
       align-items: center;
-      border-left: 1px solid rgba(255, 255, 255, 0.06);
+      gap: 2px;
     }
 
     .popover-btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
-      height: 100%;
+      width: 24px;
+      height: 24px;
       border: none;
-      background: transparent;
-      color: #666;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #888;
       cursor: pointer;
       transition: all 0.12s ease;
     }
 
     .popover-btn:hover {
-      background: rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.15);
       color: #fff;
     }
 
     .popover-btn.danger:hover {
-      background: rgba(239, 68, 68, 0.15);
+      background: rgba(239, 68, 68, 0.2);
       color: #f87171;
     }
 
     .popover-btn svg {
-      width: 14px;
-      height: 14px;
+      width: 12px;
+      height: 12px;
     }
 
     .hidden {

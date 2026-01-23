@@ -277,8 +277,17 @@ export function createElementSelectionManager(): ElementSelectionManager {
     deselectElement(element: Element): void {
       const elementData = selectedElements.get(element)
       if (elementData) {
-        ;(element as HTMLElement).style.outline = elementData.originalOutline
-        ;(element as HTMLElement).style.outlineOffset = elementData.originalOutlineOffset
+        const el = element as HTMLElement
+        if (elementData.originalOutline) {
+          el.style.outline = elementData.originalOutline
+        } else {
+          el.style.removeProperty('outline')
+        }
+        if (elementData.originalOutlineOffset) {
+          el.style.outlineOffset = elementData.originalOutlineOffset
+        } else {
+          el.style.removeProperty('outline-offset')
+        }
 
         const badge = badges.get(element)
         if (badge) {
@@ -294,8 +303,17 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
     clearAllSelections(): void {
       selectedElements.forEach((data, element) => {
-        ;(element as HTMLElement).style.outline = data.originalOutline
-        ;(element as HTMLElement).style.outlineOffset = data.originalOutlineOffset
+        const el = element as HTMLElement
+        if (data.originalOutline) {
+          el.style.outline = data.originalOutline
+        } else {
+          el.style.removeProperty('outline')
+        }
+        if (data.originalOutlineOffset) {
+          el.style.outlineOffset = data.originalOutlineOffset
+        } else {
+          el.style.removeProperty('outline-offset')
+        }
       })
 
       badges.forEach(badge => {
