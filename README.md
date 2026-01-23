@@ -65,7 +65,7 @@ export default defineConfig({
 #### Step 3: Add MCP to Claude Code
 
 ```bash
-claude mcp add annotator -- npx vite-plugin-ai-annotator
+claude mcp add annotator -- npx vite-plugin-ai-annotator -s http://localhost:7318
 ```
 
 #### Step 4: Start your dev server
