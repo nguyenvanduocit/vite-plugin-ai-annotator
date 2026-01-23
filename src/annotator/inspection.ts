@@ -84,8 +84,8 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     removeHoverHighlight()
 
-    ;(target as HTMLElement).style.outline = '3px solid #3B82F6'
-    ;(target as HTMLElement).style.outlineOffset = '-1px'
+    ;(target as HTMLElement).style.outline = '2px solid #00FFFF'
+    ;(target as HTMLElement).style.outlineOffset = '2px'
     currentHoveredElement = target
   }
 

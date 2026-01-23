@@ -51,24 +51,31 @@ export class AnnotatorToolbar extends LitElement {
   private originalConsoleMethods: Partial<Record<keyof Console, (...args: unknown[]) => void>> = {}
 
   static styles = css`
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
     :host {
+      --cyber-pink: #FF00FF;
+      --cyber-cyan: #00FFFF;
+      --cyber-yellow: #FFFF00;
+      --cyber-black: #050505;
+      --cyber-gray: #121212;
+
       position: fixed;
       bottom: 16px;
       right: 16px;
       z-index: 999999;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'JetBrains Mono', monospace;
     }
 
     .toolbar {
       position: relative;
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 6px;
-      background: rgba(0, 0, 0, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      gap: 2px;
+      padding: 4px;
+      background: var(--cyber-black);
+      border: 2px solid var(--cyber-cyan);
+      box-shadow: 4px 4px 0px rgba(0, 255, 255, 0.3), 0 0 20px rgba(0, 255, 255, 0.2);
     }
 
     .toolbar-btn {
@@ -77,30 +84,34 @@ export class AnnotatorToolbar extends LitElement {
       justify-content: center;
       width: 32px;
       height: 32px;
-      border: none;
-      border-radius: 6px;
+      border: 1px solid transparent;
       background: transparent;
-      color: #888;
+      color: var(--cyber-cyan);
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all 0.1s ease;
     }
 
     .toolbar-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
+      background: rgba(0, 255, 255, 0.1);
+      color: var(--cyber-yellow);
+      border-color: var(--cyber-cyan);
     }
 
     .toolbar-btn.active {
-      background: #3b82f6;
-      color: white;
+      background: var(--cyber-pink);
+      color: var(--cyber-black);
+      border-color: var(--cyber-pink);
+      box-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
     }
 
     .toolbar-btn.active:hover {
-      background: #2563eb;
+      background: var(--cyber-yellow);
+      color: var(--cyber-black);
+      border-color: var(--cyber-yellow);
     }
 
     .toolbar-btn:disabled {
-      opacity: 0.4;
+      opacity: 0.3;
       cursor: not-allowed;
     }
 
@@ -112,7 +123,7 @@ export class AnnotatorToolbar extends LitElement {
     .divider {
       width: 1px;
       height: 20px;
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(0, 255, 255, 0.3);
       margin: 0 4px;
     }
 
@@ -122,20 +133,21 @@ export class AnnotatorToolbar extends LitElement {
 
     .badge {
       position: absolute;
-      top: -4px;
-      right: -4px;
+      top: -6px;
+      right: -6px;
       min-width: 16px;
       height: 16px;
       padding: 0 4px;
-      background: #3b82f6;
-      border-radius: 8px;
-      font-size: 10px;
-      font-weight: 600;
-      color: white;
+      background: var(--cyber-pink);
+      border: 1px solid var(--cyber-black);
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--cyber-black);
       display: flex;
       align-items: center;
       justify-content: center;
       pointer-events: none;
+      box-shadow: 0 0 8px rgba(255, 0, 255, 0.5);
     }
 
     .error-message {
@@ -143,8 +155,10 @@ export class AnnotatorToolbar extends LitElement {
       align-items: center;
       gap: 8px;
       padding: 8px 12px;
-      color: #fca5a5;
-      font-size: 12px;
+      color: var(--cyber-pink);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .error-message svg {
@@ -153,41 +167,51 @@ export class AnnotatorToolbar extends LitElement {
       flex-shrink: 0;
     }
 
-    /* Minimal Popover */
+    /* Cyberpunk Popover */
     .popover {
       position: fixed;
       top: 0;
       left: 0;
       z-index: 1000000;
-      background: #1a1a1a;
-      border: 1px solid rgba(99, 102, 241, 0.5);
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.3), 0 0 40px rgba(99, 102, 241, 0.1);
+      background: var(--cyber-black);
+      border: 2px solid var(--cyber-cyan);
+      box-shadow: 4px 4px 0px rgba(0, 255, 255, 0.3), 0 0 30px rgba(0, 255, 255, 0.2);
       animation: popover-in 0.15s ease-out;
+    }
+
+    .popover::before {
+      content: '// COMMENT_INPUT';
+      position: absolute;
+      top: -18px;
+      left: 0;
+      font-size: 9px;
+      color: var(--cyber-cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.7;
     }
 
     @keyframes popover-in {
       from {
         opacity: 0;
-        transform: scale(0.95) translateY(-4px);
+        transform: translateY(-4px);
       }
       to {
         opacity: 1;
-        transform: scale(1) translateY(0);
+        transform: translateY(0);
       }
     }
 
     .popover-input {
       width: 240px;
-      min-height: 52px;
-      max-height: 120px;
+      min-height: 24px;
+      max-height: 37px;
       padding: 10px 12px;
-      padding-bottom: 32px;
       border: none;
       background: transparent;
-      color: #fff;
-      font-size: 13px;
-      font-family: inherit;
+      color: var(--cyber-yellow);
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
       outline: none;
       resize: none;
       overflow-y: auto;
@@ -195,13 +219,13 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-input::placeholder {
-      color: #555;
+      color: rgba(0, 255, 255, 0.4);
     }
 
     .popover-actions {
       position: absolute;
-      bottom: 4px;
-      right: 4px;
+      bottom: 6px;
+      right: 6px;
       display: flex;
       align-items: center;
       gap: 2px;
@@ -211,24 +235,25 @@ export class AnnotatorToolbar extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
-      border: none;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.1);
-      color: #888;
+      width: 22px;
+      height: 22px;
+      border: 1px solid rgba(0, 255, 255, 0.3);
+      background: transparent;
+      color: rgba(0, 255, 255, 0.6);
       cursor: pointer;
-      transition: all 0.12s ease;
+      transition: all 0.1s ease;
     }
 
     .popover-btn:hover {
-      background: rgba(255, 255, 255, 0.15);
-      color: #fff;
+      background: rgba(0, 255, 255, 0.1);
+      color: var(--cyber-cyan);
+      border-color: var(--cyber-cyan);
     }
 
     .popover-btn.danger:hover {
-      background: rgba(239, 68, 68, 0.2);
-      color: #f87171;
+      background: rgba(255, 0, 255, 0.1);
+      color: var(--cyber-pink);
+      border-color: var(--cyber-pink);
     }
 
     .popover-btn svg {
@@ -240,20 +265,23 @@ export class AnnotatorToolbar extends LitElement {
       display: none;
     }
 
-    /* Toast */
+    /* Cyberpunk Toast */
     .toast {
       position: absolute;
       bottom: 100%;
       right: 0;
       margin-bottom: 8px;
-      padding: 8px 12px;
-      background: rgba(0, 0, 0, 0.9);
-      border-radius: 6px;
-      font-size: 12px;
-      color: #10b981;
+      padding: 6px 12px;
+      background: var(--cyber-black);
+      border: 1px solid var(--cyber-cyan);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--cyber-cyan);
       white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       animation: toast-in 0.2s ease-out;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      box-shadow: 2px 2px 0px rgba(0, 255, 255, 0.3), 0 0 15px rgba(0, 255, 255, 0.2);
     }
 
     @keyframes toast-in {
@@ -652,7 +680,7 @@ export class AnnotatorToolbar extends LitElement {
       if (textareaEl) {
         textareaEl.focus()
         textareaEl.style.height = 'auto'
-        textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + 'px'
+        textareaEl.style.height = Math.min(textareaEl.scrollHeight, 37) + 'px'
       }
 
       this.popoverCleanup = autoUpdate(element, popoverEl, () => {
@@ -685,7 +713,7 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private handlePopoverInputKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       this.hideCommentPopover()
     } else if (e.key === 'Escape') {
@@ -711,7 +739,7 @@ export class AnnotatorToolbar extends LitElement {
 
     // Auto-resize textarea
     target.style.height = 'auto'
-    target.style.height = Math.min(target.scrollHeight, 120) + 'px'
+    target.style.height = Math.min(target.scrollHeight, 37) + 'px'
 
     this.commentPopover = { ...this.commentPopover, comment }
 
@@ -941,7 +969,7 @@ export class AnnotatorToolbar extends LitElement {
         <div class="popover">
           <textarea
             class="popover-input"
-            placeholder="Add a note... (⌘↵ to close)"
+            placeholder="Add a note... (↵ to close)"
             .value=${this.commentPopover.comment}
             @input=${this.handlePopoverInput}
             @keydown=${this.handlePopoverInputKeydown}

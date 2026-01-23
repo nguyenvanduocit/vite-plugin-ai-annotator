@@ -41,17 +41,18 @@ export function createElementSelectionManager(): ElementSelectionManager {
   const badges = new Map<Element, BadgeElement>()
   let colorIndex = 0
   let onEditClickCallback: ((element: Element) => void) | null = null
+  // Cyberpunk color palette
   const colors = [
-    '#FF6B6B',
-    '#FF9671',
-    '#FFA75F',
-    '#F9D423',
-    '#FECA57',
-    '#FF9FF3',
-    '#FF7E67',
-    '#FF8C42',
-    '#FFC857',
-    '#FFA26B',
+    '#FF00FF', // cyber-pink
+    '#00FFFF', // cyber-cyan
+    '#FFFF00', // cyber-yellow
+    '#FF00FF',
+    '#00FFFF',
+    '#FFFF00',
+    '#FF00FF',
+    '#00FFFF',
+    '#FFFF00',
+    '#FF00FF',
   ]
 
   function createPencilIcon(): SVGSVGElement {
@@ -81,53 +82,71 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
     const shadow = badge.attachShadow({ mode: 'open' })
 
+    // Determine text color based on background
+    const textColor = color === '#FFFF00' ? '#050505' : '#050505'
+    const glowColor = color.toLowerCase()
+
     const style = document.createElement('style')
     style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+      @keyframes badge-glow {
+        0%, 100% {
+          box-shadow: 2px 2px 0px ${color}44, 0 0 8px ${glowColor}80;
+        }
+        50% {
+          box-shadow: 2px 2px 0px ${color}66, 0 0 15px ${glowColor}aa;
+        }
+      }
+
       .badge-container {
         display: flex;
         align-items: center;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-        border-radius: 4px;
+        border: 2px solid ${color};
+        background: #050505;
+        box-shadow: 2px 2px 0px ${color}44, 0 0 10px ${glowColor}60;
+        animation: badge-glow 2s ease-in-out infinite;
       }
       .badge {
         height: 20px;
-        padding: 0 6px;
+        padding: 0 8px;
         background-color: ${color};
-        color: white;
-        border-radius: 4px 0 0 4px;
+        color: ${textColor};
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 11px;
-        font-weight: bold;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 10px;
+        font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
         pointer-events: none;
         white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
       .edit-btn {
         height: 20px;
-        width: 22px;
-        background-color: ${color};
+        width: 24px;
+        background-color: transparent;
         border: none;
-        border-left: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 0 4px 4px 0;
+        border-left: 1px solid ${color}44;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
         pointer-events: auto;
-        transition: background-color 0.15s ease;
+        transition: all 0.1s ease;
       }
       .edit-btn:hover {
-        background-color: ${adjustColor(color, -20)};
+        background-color: ${color};
       }
       .edit-btn svg {
         width: 12px;
         height: 12px;
-        color: white;
+        color: ${color};
         opacity: 0.8;
       }
       .edit-btn:hover svg {
+        color: ${textColor};
         opacity: 1;
       }
       .edit-btn.has-comment svg {
@@ -198,15 +217,6 @@ export function createElementSelectionManager(): ElementSelectionManager {
     return badge
   }
 
-  // Helper function to darken/lighten a color
-  function adjustColor(color: string, amount: number): string {
-    const hex = color.replace('#', '')
-    const r = Math.max(0, Math.min(255, parseInt(hex.slice(0, 2), 16) + amount))
-    const g = Math.max(0, Math.min(255, parseInt(hex.slice(2, 4), 16) + amount))
-    const b = Math.max(0, Math.min(255, parseInt(hex.slice(4, 6), 16) + amount))
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
-  }
-
   function reindexElements(): void {
     let index = 1
 
@@ -260,8 +270,8 @@ export function createElementSelectionManager(): ElementSelectionManager {
       const originalOutline = el.style.outline
       const originalOutlineOffset = el.style.outlineOffset
 
-      el.style.outline = `3px solid ${color}`
-      el.style.outlineOffset = '-1px'
+      el.style.outline = `2px dashed ${color}`
+      el.style.outlineOffset = '2px'
 
       const badge = createBadge(index, color, element, componentFinder)
       badges.set(element, badge)
