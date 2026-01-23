@@ -349,6 +349,32 @@ function extractReactSourceMap(fiber: ReactFiber): ComponentInfo['sourceMap'] | 
 }
 
 function getVanillaComponentInfo(element: Element): ComponentInfo | null {
+  // Check for injected source location (from vite-plugin-ai-annotator transform)
+  const sourceLoc = element.getAttribute('data-source-loc')
+  if (sourceLoc) {
+    // Format: "path/to/file.html:line:column"
+    const match = sourceLoc.match(/^(.+):(\d+):(\d+)$/)
+    if (match) {
+      const [, file, line, column] = match
+      return {
+        componentLocation: file,
+        componentName: element.tagName.toLowerCase(),
+        framework: 'vanilla',
+        elementLocation: {
+          file,
+          line: parseInt(line, 10),
+          column: parseInt(column, 10),
+        },
+        sourceMap: {
+          originalLine: parseInt(line, 10),
+          originalColumn: parseInt(column, 10),
+          originalSource: file,
+        },
+      }
+    }
+  }
+
+  // Legacy support for data-component-name/data-component-file
   const componentName = element.getAttribute('data-component-name')
   const componentFile = element.getAttribute('data-component-file')
 
