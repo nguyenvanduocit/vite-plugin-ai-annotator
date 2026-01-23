@@ -909,7 +909,7 @@ export class AnnotatorToolbar extends LitElement {
 
   private openHelpPage() {
     this.exitInspectingMode()
-    window.open('https://ai-annotator.dev', '_blank')
+    window.open('https://annotator.aiocean.io/', '_blank')
   }
 
   render() {
