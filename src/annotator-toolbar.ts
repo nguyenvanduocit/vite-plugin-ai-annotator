@@ -526,24 +526,32 @@ export class AnnotatorToolbar extends LitElement {
     quality: number = 0.8
   ): Promise<ScreenshotResult> {
     try {
-      let targetElement: HTMLElement = document.body
+      let targetElement: Element = document.body
 
       if (type === 'element' && selector) {
         const element = document.querySelector(selector)
-        if (!element || !(element instanceof HTMLElement)) {
+        if (!element) {
+          console.error(`[AI Annotator] Element not found for selector: ${selector}`)
           return { success: false, error: `Element not found: ${selector}` }
         }
         targetElement = element
       }
 
-      const blob = await toBlob(targetElement, {
+      console.log(`[AI Annotator] Capturing screenshot of ${type === 'element' ? selector : 'viewport'}`)
+
+      const blob = await toBlob(targetElement as HTMLElement, {
         quality,
         type: format === 'png' ? 'image/png' : 'image/jpeg',
+        cacheBust: true, // Avoid caching issues
+        skipFonts: true, // Avoid font loading issues that can cause failures
       })
 
       if (!blob) {
-        return { success: false, error: 'Failed to capture screenshot' }
+        console.error('[AI Annotator] toBlob returned null - screenshot capture failed')
+        return { success: false, error: 'Failed to capture screenshot (toBlob returned null)' }
       }
+
+      console.log(`[AI Annotator] Screenshot captured, blob size: ${blob.size} bytes`)
 
       const reader = new FileReader()
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -558,9 +566,11 @@ export class AnnotatorToolbar extends LitElement {
 
       return { success: true, base64 }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`[AI Annotator] Screenshot error: ${errorMessage}`, error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error)
+        error: errorMessage
       }
     }
   }
