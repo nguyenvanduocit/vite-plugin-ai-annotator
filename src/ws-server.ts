@@ -712,6 +712,7 @@ export async function startServer(
       methods: ['GET', 'POST'],
     },
     path: '/socket.io',
+    maxHttpBufferSize: 50e6, // 50MB for large screenshots
   })
 
   setupSocketIO(io, logger)
