@@ -102,12 +102,12 @@ class AiAnnotatorServer {
   private serverProcess: ChildProcess | null = null;
   private options: Required<AiAnnotatorOptions>;
   private packageDir: string;
-  private isDevelopment: boolean;
+  private isRunningFromSource: boolean;
 
   constructor(options: AiAnnotatorOptions = {}) {
     const port = options.port ?? 7318;
     const listenAddress = options.listenAddress ?? 'localhost';
-    
+
     this.options = {
       port,
       listenAddress,
@@ -115,25 +115,14 @@ class AiAnnotatorServer {
       verbose: options.verbose ?? false,
       injectSourceLoc: options.injectSourceLoc ?? true,
     };
-  
 
-    // Detect if we're running from source or from installed package
+    // Detect if we're running from source (src/) or from installed package (dist/)
     const currentFileDir = dirname(fileURLToPath(import.meta.url));
-
-    // Check if we're in src directory (development) or dist directory (production)
-    this.isDevelopment = currentFileDir.endsWith('/src') || currentFileDir.endsWith('\\src');
-
-    // Get the package root directory
-    if (this.isDevelopment) {
-      // In development: current file is in src/, package root is one level up
-      this.packageDir = dirname(currentFileDir);
-    } else {
-      // In production: current file is in dist/, package root is one level up
-      this.packageDir = dirname(currentFileDir);
-    }
+    this.isRunningFromSource = currentFileDir.endsWith('/src') || currentFileDir.endsWith('\\src');
+    this.packageDir = dirname(currentFileDir);
 
     this.log(`Package directory: ${this.packageDir}`);
-    this.log(`Running in ${this.isDevelopment ? 'development' : 'production'} mode`);
+    this.log(`Running from ${this.isRunningFromSource ? 'source' : 'installed package'}`);
   }
 
   async start(): Promise<void> {
@@ -153,8 +142,8 @@ class AiAnnotatorServer {
     let cmd: string;
     let args: string[];
 
-    if (this.isDevelopment) {
-      // Development: run TypeScript file directly with bun
+    if (this.isRunningFromSource) {
+      // Running from source: run TypeScript file directly with bun
       serverFile = join(this.packageDir, 'src', 'index.ts');
       cmd = 'bun';
       args = [serverFile];
@@ -279,11 +268,6 @@ class AiAnnotatorServer {
   getInjectScript(): string {
     return `<script src="${this.options.publicAddress}/annotator-toolbar.js" type="module" async></script>`;
   }
-
-  shouldInject(): boolean {
-    return true;
-  }
-
 }
 
 function injectScriptIntoHtml(html: string, scriptTag: string): string {
@@ -295,6 +279,12 @@ function injectScriptIntoHtml(html: string, scriptTag: string): string {
   return html + scriptTag;
 }
 
+/**
+ * AI-powered element annotator for Vite development.
+ *
+ * PRODUCTION SAFETY: Uses `apply: 'serve'` - completely inactive during
+ * production builds (`vite build`). No scripts injected, no server started.
+ */
 export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
   let serverManager: AiAnnotatorServer;
   let root = process.cwd();
@@ -329,7 +319,7 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
 
     // For regular Vite apps (SPA)
     transformIndexHtml(html: string, ctx) {
-      if (!serverManager || !serverManager.shouldInject()) {
+      if (!serverManager) {
         return html;
       }
 
@@ -350,7 +340,7 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
     // For SSR frameworks like Nuxt - intercept HTML responses
     configureServer(server: ViteDevServer) {
       server.middlewares.use((_req, res, next) => {
-        if (!serverManager || !serverManager.shouldInject()) {
+        if (!serverManager) {
           return next();
         }
 
@@ -397,13 +387,6 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
 
     async closeBundle() {
       await serverManager.stop();
-    },
-
-    async buildEnd() {
-      // Stop server when build ends (in build mode)
-      if (this.meta.watchMode === false) {
-        await serverManager.stop();
-      }
     },
   };
 }

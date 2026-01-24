@@ -31,7 +31,6 @@ export interface ElementSelectionManager {
   findSelectedChildren(element: Element): Element[]
   buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[]
   setOnEditClick(callback: (element: Element) => void): void
-  updateBadgeCommentIndicator(element: Element, hasComment: boolean): void
 }
 
 export function createElementSelectionManager(): ElementSelectionManager {
@@ -52,22 +51,6 @@ export function createElementSelectionManager(): ElementSelectionManager {
     '#FFFF00',
     '#FF00FF',
   ]
-
-  function createPencilIcon(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.setAttribute('fill', 'none')
-    svg.setAttribute('viewBox', '0 0 24 24')
-    svg.setAttribute('stroke', 'currentColor')
-    svg.setAttribute('stroke-width', '2')
-
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-    path.setAttribute('stroke-linecap', 'round')
-    path.setAttribute('stroke-linejoin', 'round')
-    path.setAttribute('d', 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10')
-
-    svg.appendChild(path)
-    return svg
-  }
 
   function createBadge(
     index: number,
@@ -104,6 +87,11 @@ export function createElementSelectionManager(): ElementSelectionManager {
         background: #050505;
         box-shadow: 1px 1px 0px ${color}44, 0 0 6px ${glowColor}60;
         animation: badge-glow 2s ease-in-out infinite;
+        cursor: pointer;
+        transition: all 0.1s ease;
+      }
+      .badge-container:hover {
+        box-shadow: 2px 2px 0px ${color}66, 0 0 12px ${glowColor}aa;
       }
       .badge {
         height: 14px;
@@ -116,38 +104,8 @@ export function createElementSelectionManager(): ElementSelectionManager {
         font-size: 9px;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
-        pointer-events: none;
         white-space: nowrap;
         text-transform: uppercase;
-      }
-      .edit-btn {
-        height: 14px;
-        width: 18px;
-        background-color: transparent;
-        border: none;
-        border-left: 1px solid ${color}44;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        pointer-events: auto;
-        transition: all 0.1s ease;
-      }
-      .edit-btn:hover {
-        background-color: ${color};
-      }
-      .edit-btn svg {
-        width: 10px;
-        height: 10px;
-        color: ${color};
-        opacity: 0.8;
-      }
-      .edit-btn:hover svg {
-        color: ${textColor};
-        opacity: 1;
-      }
-      .edit-btn.has-comment svg {
-        opacity: 1;
       }
     `
 
@@ -166,12 +124,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
       badgeContent.textContent = `#${index} ${element.tagName}`
     }
 
-    const editBtn = document.createElement('button')
-    editBtn.classList.add('edit-btn', 'annotator-ignore')
-    editBtn.title = 'Edit comment'
-    editBtn.appendChild(createPencilIcon())
-
-    editBtn.addEventListener('click', (e) => {
+    container.addEventListener('click', (e) => {
       e.stopPropagation()
       e.preventDefault()
       if (onEditClickCallback) {
@@ -180,7 +133,6 @@ export function createElementSelectionManager(): ElementSelectionManager {
     })
 
     container.appendChild(badgeContent)
-    container.appendChild(editBtn)
     shadow.appendChild(style)
     shadow.appendChild(container)
 
@@ -327,20 +279,6 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
     setOnEditClick(callback: (element: Element) => void): void {
       onEditClickCallback = callback
-    },
-
-    updateBadgeCommentIndicator(element: Element, hasComment: boolean): void {
-      const badge = badges.get(element)
-      if (badge) {
-        const editBtn = badge.shadowRoot?.querySelector('.edit-btn')
-        if (editBtn) {
-          if (hasComment) {
-            editBtn.classList.add('has-comment')
-          } else {
-            editBtn.classList.remove('has-comment')
-          }
-        }
-      }
     },
 
     buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[] {

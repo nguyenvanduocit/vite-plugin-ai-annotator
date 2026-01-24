@@ -28,6 +28,13 @@ interface PopoverState {
   comment: string
 }
 
+interface TooltipState {
+  visible: boolean
+  text: string
+  x: number
+  y: number
+}
+
 @customElement('annotator-toolbar')
 export class AnnotatorToolbar extends LitElement {
   @property({ attribute: 'ws-endpoint' }) wsEndpoint = 'http://localhost:7318'
@@ -38,8 +45,10 @@ export class AnnotatorToolbar extends LitElement {
   @state() private selectionCount = 0
   @state() private isInspecting = false
   @state() private commentPopover: PopoverState = { visible: false, element: null, comment: '' }
+  @state() private tooltip: TooltipState = { visible: false, text: '', x: 0, y: 0 }
   @state() private toastMessage = ''
   private popoverCleanup: (() => void) | null = null
+  private tooltipCleanup: (() => void) | null = null
   private toastTimeout: ReturnType<typeof setTimeout> | null = null
 
   private socket: Socket | null = null
@@ -287,6 +296,35 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Cyberpunk Tooltip */
+    .tooltip {
+      position: fixed;
+      z-index: 1000001;
+      padding: 4px 8px;
+      background: var(--cyber-black);
+      border: 1px solid var(--cyber-cyan);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--cyber-cyan);
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      animation: tooltip-in 0.1s ease-out;
+      box-shadow: 2px 2px 0px rgba(0, 255, 255, 0.3), 0 0 10px rgba(0, 255, 255, 0.15);
+    }
+
+    @keyframes tooltip-in {
       from {
         opacity: 0;
         transform: translateY(4px);
@@ -782,13 +820,10 @@ export class AnnotatorToolbar extends LitElement {
 
     // Auto-save comment
     if (element) {
-      const hasComment = comment.trim().length > 0
-      if (hasComment) {
+      if (comment.trim().length > 0) {
         this.elementComments.set(element, comment.trim())
-        this.selectionManager?.updateBadgeCommentIndicator(element, true)
       } else {
         this.elementComments.delete(element)
-        this.selectionManager?.updateBadgeCommentIndicator(element, false)
       }
     }
   }
@@ -817,6 +852,10 @@ export class AnnotatorToolbar extends LitElement {
     if (this.popoverCleanup) {
       this.popoverCleanup()
       this.popoverCleanup = null
+    }
+    if (this.tooltipCleanup) {
+      this.tooltipCleanup()
+      this.tooltipCleanup = null
     }
     this.inspectionManager?.destroy()
     this.selectionManager?.clearAllSelections()
@@ -919,6 +958,45 @@ export class AnnotatorToolbar extends LitElement {
     }, 2000)
   }
 
+  private showTooltip(text: string, reference: HTMLElement) {
+    if (this.tooltipCleanup) {
+      this.tooltipCleanup()
+      this.tooltipCleanup = null
+    }
+
+    this.tooltip = { visible: true, text, x: 0, y: 0 }
+
+    this.updateComplete.then(() => {
+      const tooltipEl = this.shadowRoot?.querySelector('.tooltip') as HTMLElement
+      if (!tooltipEl) return
+
+      this.tooltipCleanup = autoUpdate(reference, tooltipEl, () => {
+        computePosition(reference, tooltipEl, {
+          strategy: 'fixed',
+          placement: 'top',
+          middleware: [
+            offset(6),
+            flip({ fallbackPlacements: ['bottom', 'left', 'right'] }),
+            shift({ padding: 8 }),
+          ],
+        }).then(({ x, y }) => {
+          Object.assign(tooltipEl.style, {
+            left: `${x}px`,
+            top: `${y}px`,
+          })
+        })
+      })
+    })
+  }
+
+  private hideTooltip() {
+    if (this.tooltipCleanup) {
+      this.tooltipCleanup()
+      this.tooltipCleanup = null
+    }
+    this.tooltip = { visible: false, text: '', x: 0, y: 0 }
+  }
+
   private async copySessionId() {
     this.exitInspectingMode()
     if (!this.sessionId) {
@@ -964,7 +1042,8 @@ export class AnnotatorToolbar extends LitElement {
         <button
           class="toolbar-btn ${this.isInspecting ? 'active' : ''}"
           @click=${this.toggleInspect}
-          title=${this.isInspecting ? 'Stop inspecting (click to exit)' : 'Start inspecting elements'}
+          @mouseenter=${(e: MouseEvent) => this.showTooltip(this.isInspecting ? 'Press ESC to exit' : 'Inspect elements', e.currentTarget as HTMLElement)}
+          @mouseleave=${() => this.hideTooltip()}
         >
           ${this.renderCursorIcon()}
         </button>
@@ -973,7 +1052,8 @@ export class AnnotatorToolbar extends LitElement {
           <button
             class="toolbar-btn"
             @click=${this.handleClearClick}
-            title="Clear all selections"
+            @mouseenter=${(e: MouseEvent) => this.showTooltip('Clear selections', e.currentTarget as HTMLElement)}
+            @mouseleave=${() => this.hideTooltip()}
             ?disabled=${this.selectionCount === 0}
           >
             ${this.renderTrashIcon()}
@@ -986,7 +1066,8 @@ export class AnnotatorToolbar extends LitElement {
         <button
           class="toolbar-btn"
           @click=${this.copySessionId}
-          title="Copy session ID"
+          @mouseenter=${(e: MouseEvent) => this.showTooltip('Copy session', e.currentTarget as HTMLElement)}
+          @mouseleave=${() => this.hideTooltip()}
         >
           ${this.renderClipboardIcon()}
         </button>
@@ -994,13 +1075,16 @@ export class AnnotatorToolbar extends LitElement {
         <button
           class="toolbar-btn"
           @click=${this.openHelpPage}
-          title="Help & Documentation"
+          @mouseenter=${(e: MouseEvent) => this.showTooltip('Help', e.currentTarget as HTMLElement)}
+          @mouseleave=${() => this.hideTooltip()}
         >
           ${this.renderHelpIcon()}
         </button>
 
         ${this.toastMessage ? html`<div class="toast">${this.toastMessage}</div>` : ''}
       </div>
+
+      ${this.tooltip.visible ? html`<div class="tooltip">${this.tooltip.text}</div>` : ''}
 
       ${this.commentPopover.visible ? html`
         <div class="popover">
