@@ -166,28 +166,125 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     return elements
   }
 
-  function filterBestElements(elements: Element[]): Element[] {
-    // Remove parents if their children are also selected
-    // Keep only the most specific (leaf) elements
-    const result: Element[] = []
+  function findLowestCommonAncestor(elements: Element[]): Element | null {
+    if (elements.length === 0) return null
+    if (elements.length === 1) return elements[0]
 
-    for (const element of elements) {
-      // Check if any of this element's descendants are also in the selection
-      let hasSelectedDescendant = false
-      for (const other of elements) {
-        if (other !== element && element.contains(other)) {
-          hasSelectedDescendant = true
-          break
-        }
+    // Get all ancestors for the first element
+    const getAncestors = (el: Element): Element[] => {
+      const ancestors: Element[] = []
+      let current: Element | null = el
+      while (current && current !== document.body && current !== document.documentElement) {
+        ancestors.push(current)
+        current = current.parentElement
+      }
+      if (document.body) ancestors.push(document.body)
+      return ancestors
+    }
+
+    const firstAncestors = getAncestors(elements[0])
+
+    // Find the first common ancestor
+    for (const ancestor of firstAncestors) {
+      const isCommon = elements.every(el => ancestor.contains(el))
+      if (isCommon) {
+        return ancestor
+      }
+    }
+
+    return document.body
+  }
+
+  function findDirectChildrenInRect(parent: Element, rect: DOMRect, allElements: Element[]): Element[] {
+    // Find direct children of parent that either:
+    // 1. Intersect with the selection rect
+    // 2. Contain elements that intersect with the selection rect
+    const result: Element[] = []
+    const childrenSet = new Set<Element>()
+
+    for (const element of allElements) {
+      // Walk up from element to find which direct child of parent contains it
+      let current: Element | null = element
+      while (current && current.parentElement !== parent) {
+        current = current.parentElement
       }
 
-      // Only keep elements that don't have selected descendants
-      if (!hasSelectedDescendant) {
-        result.push(element)
+      if (current && current.parentElement === parent) {
+        childrenSet.add(current)
+      }
+    }
+
+    // Filter: only keep children that actually intersect with rect
+    for (const child of childrenSet) {
+      const childRect = child.getBoundingClientRect()
+      if (rectsIntersect(rect, childRect)) {
+        result.push(child)
       }
     }
 
     return result
+  }
+
+  function selectSmartElements(elements: Element[], selectionRect: DOMRect): Element[] {
+    if (elements.length === 0) return []
+    if (elements.length === 1) return elements
+
+    // Find LCA of all elements
+    const lca = findLowestCommonAncestor(elements)
+    if (!lca || lca === document.body) {
+      // Fallback: if LCA is body, find elements at similar DOM depth
+      return filterByDOMDepth(elements)
+    }
+
+    // Find direct children of LCA that are in the selection
+    const directChildren = findDirectChildrenInRect(lca, selectionRect, elements)
+
+    // If only one direct child, it might be too high level - go deeper
+    if (directChildren.length === 1) {
+      const child = directChildren[0]
+      const childElements = elements.filter(el => child.contains(el) && el !== child)
+      if (childElements.length > 1) {
+        // Recurse to find better selection within this child
+        return selectSmartElements(childElements, selectionRect)
+      }
+      return directChildren
+    }
+
+    return directChildren.length > 0 ? directChildren : elements.slice(0, 1)
+  }
+
+  function filterByDOMDepth(elements: Element[]): Element[] {
+    // Group elements by their DOM depth and return the most common depth level
+    const getDepth = (el: Element): number => {
+      let depth = 0
+      let current: Element | null = el
+      while (current && current !== document.body) {
+        depth++
+        current = current.parentElement
+      }
+      return depth
+    }
+
+    const depthMap = new Map<number, Element[]>()
+    for (const el of elements) {
+      const depth = getDepth(el)
+      if (!depthMap.has(depth)) {
+        depthMap.set(depth, [])
+      }
+      depthMap.get(depth)!.push(el)
+    }
+
+    // Find depth with most elements
+    let maxCount = 0
+    let bestDepth = 0
+    for (const [depth, els] of depthMap) {
+      if (els.length > maxCount) {
+        maxCount = els.length
+        bestDepth = depth
+      }
+    }
+
+    return depthMap.get(bestDepth) || elements
   }
 
   function handleMouseDown(e: MouseEvent): void {
@@ -253,10 +350,10 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       // Only process if selection has some size
       if (selectionRect.width > 10 && selectionRect.height > 10) {
         const elementsInRect = findElementsInRect(selectionRect)
-        const bestElements = filterBestElements(elementsInRect)
+        const smartElements = selectSmartElements(elementsInRect, selectionRect)
 
-        if (bestElements.length > 0) {
-          onMultiSelect?.(bestElements)
+        if (smartElements.length > 0) {
+          onMultiSelect?.(smartElements)
         }
       }
     }
