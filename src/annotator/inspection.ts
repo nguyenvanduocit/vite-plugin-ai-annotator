@@ -135,11 +135,14 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     return new DOMRect(left, top, width, height)
   }
 
-  function rectsIntersect(r1: DOMRect, r2: DOMRect): boolean {
-    return !(r1.right < r2.left || r1.left > r2.right || r1.bottom < r2.top || r1.top > r2.bottom)
+  function isFullyContained(inner: DOMRect, outer: DOMRect): boolean {
+    return inner.left >= outer.left &&
+           inner.right <= outer.right &&
+           inner.top >= outer.top &&
+           inner.bottom <= outer.bottom
   }
 
-  function findElementsInRect(rect: DOMRect): Element[] {
+  function findElementsFullyInRect(rect: DOMRect): Element[] {
     // Temporarily enable pointer-events
     if (inspectionStyleElement) {
       inspectionStyleElement.disabled = true
@@ -156,7 +159,8 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       // Skip elements with no visible area
       if (elementRect.width === 0 || elementRect.height === 0) continue
 
-      if (rectsIntersect(rect, elementRect)) {
+      // Only select if element is 100% inside selection rect
+      if (isFullyContained(elementRect, rect)) {
         elements.push(element)
       }
     }
@@ -168,176 +172,11 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     return elements
   }
 
-  function findLowestCommonAncestor(elements: Element[]): Element | null {
-    if (elements.length === 0) return null
-    if (elements.length === 1) return elements[0]
-
-    // Get all ancestors for the first element
-    const getAncestors = (el: Element): Element[] => {
-      const ancestors: Element[] = []
-      let current: Element | null = el
-      while (current && current !== document.body && current !== document.documentElement) {
-        ancestors.push(current)
-        current = current.parentElement
-      }
-      if (document.body) ancestors.push(document.body)
-      return ancestors
-    }
-
-    const firstAncestors = getAncestors(elements[0])
-
-    // Find the first common ancestor
-    for (const ancestor of firstAncestors) {
-      const isCommon = elements.every(el => ancestor.contains(el))
-      if (isCommon) {
-        return ancestor
-      }
-    }
-
-    return document.body
-  }
-
-  function findDirectChildrenInRect(parent: Element, rect: DOMRect, allElements: Element[]): Element[] {
-    // Find direct children of parent that either:
-    // 1. Intersect with the selection rect
-    // 2. Contain elements that intersect with the selection rect
-    const result: Element[] = []
-    const childrenSet = new Set<Element>()
-
-    for (const element of allElements) {
-      // Walk up from element to find which direct child of parent contains it
-      let current: Element | null = element
-      while (current && current.parentElement !== parent) {
-        current = current.parentElement
-      }
-
-      if (current && current.parentElement === parent) {
-        childrenSet.add(current)
-      }
-    }
-
-    // Filter: only keep children that actually intersect with rect
-    for (const child of childrenSet) {
-      const childRect = child.getBoundingClientRect()
-      if (rectsIntersect(rect, childRect)) {
-        result.push(child)
-      }
-    }
-
-    return result
-  }
-
-  function findLeafElements(elements: Element[]): Element[] {
-    // Find elements that don't have any other selected element as descendant
+  function filterLeafElements(elements: Element[]): Element[] {
+    // Remove parents if their children are also selected (keep only leaves)
     return elements.filter(el => {
       return !elements.some(other => other !== el && el.contains(other))
     })
-  }
-
-  function isSemanticContainer(el: Element): boolean {
-    // Check if element is a meaningful container worth selecting
-    const tag = el.tagName.toLowerCase()
-    const semanticTags = ['article', 'section', 'aside', 'nav', 'header', 'footer', 'main', 'div', 'li', 'tr', 'td', 'th', 'form', 'fieldset']
-    if (!semanticTags.includes(tag)) return false
-
-    // Check for common component class patterns
-    const className = el.className || ''
-    const hasComponentClass = /card|item|row|cell|box|panel|widget|block|container|wrapper|group|list|grid/i.test(className)
-
-    // Check for data attributes that suggest a component
-    const hasDataAttr = el.hasAttribute('data-testid') || el.hasAttribute('data-component') || el.hasAttribute('data-v-')
-
-    return hasComponentClass || hasDataAttr || tag !== 'div'
-  }
-
-  function selectSmartElements(elements: Element[], selectionRect: DOMRect): Element[] {
-    if (elements.length === 0) return []
-    if (elements.length === 1) return elements
-
-    // Get leaf elements only (most specific)
-    const leafElements = findLeafElements(elements)
-    if (leafElements.length === 0) return elements.slice(0, 1)
-    if (leafElements.length === 1) return leafElements
-
-    // Find LCA of leaf elements
-    const lca = findLowestCommonAncestor(leafElements)
-    if (!lca || lca === document.body || lca === document.documentElement) {
-      return filterByDOMDepth(leafElements)
-    }
-
-    // Check if all leaf elements are direct children of LCA
-    const allDirectChildren = leafElements.every(el => el.parentElement === lca)
-
-    if (allDirectChildren) {
-      // All elements are siblings → select their parent (the container)
-      // Example: 3 buttons directly in card → select card
-      return [lca]
-    }
-
-    // Elements are nested in sub-containers
-    // Find the direct children of LCA that contain our elements
-    const directChildren = findDirectChildrenInRect(lca, selectionRect, leafElements)
-
-    if (directChildren.length === 1) {
-      // Only one branch contains all elements → recurse into it
-      const child = directChildren[0]
-      const childLeafElements = leafElements.filter(el => child.contains(el))
-
-      if (childLeafElements.length > 1) {
-        // Check if all are direct children of this child
-        const allDirectOfChild = childLeafElements.every(el => el.parentElement === child)
-        if (allDirectOfChild) {
-          // Example: 3 buttons in footer → select footer
-          return [child]
-        }
-        // Recurse deeper
-        return selectSmartElements(childLeafElements, selectionRect)
-      }
-      return [child]
-    }
-
-    // Multiple branches selected
-    // Check if LCA is a semantic container worth selecting
-    if (isSemanticContainer(lca)) {
-      return [lca]
-    }
-
-    // Otherwise return the direct children (sub-containers)
-    return directChildren.length > 0 ? directChildren : [lca]
-  }
-
-  function filterByDOMDepth(elements: Element[]): Element[] {
-    // Group elements by their DOM depth and return the most common depth level
-    const getDepth = (el: Element): number => {
-      let depth = 0
-      let current: Element | null = el
-      while (current && current !== document.body) {
-        depth++
-        current = current.parentElement
-      }
-      return depth
-    }
-
-    const depthMap = new Map<number, Element[]>()
-    for (const el of elements) {
-      const depth = getDepth(el)
-      if (!depthMap.has(depth)) {
-        depthMap.set(depth, [])
-      }
-      depthMap.get(depth)!.push(el)
-    }
-
-    // Find depth with most elements
-    let maxCount = 0
-    let bestDepth = 0
-    for (const [depth, els] of depthMap) {
-      if (els.length > maxCount) {
-        maxCount = els.length
-        bestDepth = depth
-      }
-    }
-
-    return depthMap.get(bestDepth) || elements
   }
 
   function handleMouseDown(e: MouseEvent): void {
@@ -402,11 +241,11 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       const selectionRect = getSelectionRect()
       // Only process if selection has some size
       if (selectionRect.width > 10 && selectionRect.height > 10) {
-        const elementsInRect = findElementsInRect(selectionRect)
-        const smartElements = selectSmartElements(elementsInRect, selectionRect)
+        const elementsInRect = findElementsFullyInRect(selectionRect)
+        const leafElements = filterLeafElements(elementsInRect)
 
-        if (smartElements.length > 0) {
-          onMultiSelect?.(smartElements)
+        if (leafElements.length > 0) {
+          onMultiSelect?.(leafElements)
         }
       }
     }
