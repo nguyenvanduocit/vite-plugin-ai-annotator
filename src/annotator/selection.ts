@@ -164,9 +164,9 @@ export function createElementSelectionManager(): ElementSelectionManager {
     if (component && component.componentLocation) {
       const componentPath = component.componentLocation.split('@')[0]
       const fileName = componentPath.split('/').pop()
-      badgeContent.textContent = `(${index}) [${fileName}]`
+      badgeContent.textContent = `#${index} ${fileName}`
     } else {
-      badgeContent.textContent = `(${index}) ${element.tagName}`
+      badgeContent.textContent = `#${index} ${element.tagName}`
     }
 
     const editBtn = document.createElement('button')
@@ -227,7 +227,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
       if (badge) {
         const badgeContent = badge.shadowRoot?.querySelector('.badge')
         if (badgeContent) {
-          badgeContent.textContent = `(${index}) ${element.tagName}`
+          badgeContent.textContent = `#${index} ${element.tagName}`
         }
       }
 
