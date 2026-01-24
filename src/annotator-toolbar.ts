@@ -530,13 +530,13 @@ export class AnnotatorToolbar extends LitElement {
       if (type === 'element' && selector) {
         const element = document.querySelector(selector)
         if (!element) {
-          console.error(`[AI Annotator] Element not found for selector: ${selector}`)
+          this.log(`Element not found for selector: ${selector}`)
           return { success: false, error: `Element not found: ${selector}` }
         }
         targetElement = element
       }
 
-      console.log(`[AI Annotator] Capturing screenshot of ${type === 'element' ? selector : 'viewport'}`)
+      this.log(`Capturing screenshot of ${type === 'element' ? selector : 'viewport'}`)
 
       const blob = await toBlob(targetElement as HTMLElement, {
         quality,
@@ -546,11 +546,11 @@ export class AnnotatorToolbar extends LitElement {
       })
 
       if (!blob) {
-        console.error('[AI Annotator] toBlob returned null - screenshot capture failed')
+        this.log('toBlob returned null - screenshot capture failed')
         return { success: false, error: 'Failed to capture screenshot (toBlob returned null)' }
       }
 
-      console.log(`[AI Annotator] Screenshot captured, blob size: ${blob.size} bytes`)
+      this.log(`Screenshot captured, blob size: ${blob.size} bytes`)
 
       const reader = new FileReader()
       const base64 = await new Promise<string>((resolve, reject) => {
@@ -566,7 +566,7 @@ export class AnnotatorToolbar extends LitElement {
       return { success: true, base64 }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      console.error(`[AI Annotator] Screenshot error: ${errorMessage}`, error)
+      this.log(`Screenshot error: ${errorMessage}`, error)
       return {
         success: false,
         error: errorMessage
