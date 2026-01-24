@@ -37,6 +37,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   let selectionOverlay: HTMLDivElement | null = null
   let dragState: DragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
   let mouseDownTime = 0
+  let justFinishedDrag = false
 
   function addInspectionStyles(): void {
     inspectionStyleElement = document.createElement('style')
@@ -235,6 +236,9 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     const wasDragging = dragState.isDragging
 
     if (wasDragging) {
+      // Mark that we just finished dragging (to skip the click event)
+      justFinishedDrag = true
+
       // Complete drag selection
       removeSelectionOverlay()
 
@@ -256,8 +260,9 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function handleClick(e: MouseEvent): void {
-    // If we were dragging, don't process as click
-    if (dragState.isDragging) {
+    // Skip click if we just finished dragging
+    if (justFinishedDrag) {
+      justFinishedDrag = false
       e.preventDefault()
       e.stopPropagation()
       return
