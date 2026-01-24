@@ -320,6 +320,7 @@ export class AnnotatorToolbar extends LitElement {
 
     this.inspectionManager = createInspectionManager({
       onElementSelect: (element) => this.handleElementSelected(element),
+      onMultiSelect: (elements) => this.handleMultiSelect(elements),
       shouldIgnoreElement: (element) => this.shouldIgnoreElement(element),
       isElementSelected: (element) => this.selectionManager?.hasElement(element) || false,
       onEscape: () => this.exitInspectingMode(),
@@ -636,6 +637,31 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     this.selectionCount = this.selectionManager.getSelectedCount()
+
+    if (this.socket?.connected) {
+      this.socket.emit('selectionChanged', {
+        count: this.selectionCount,
+        elements: this.getSelectedElements(),
+      })
+    }
+  }
+
+  private handleMultiSelect(elements: Element[]) {
+    if (!this.selectionManager) return
+
+    let newSelectCount = 0
+    for (const element of elements) {
+      if (!this.selectionManager.hasElement(element)) {
+        this.selectionManager.selectElement(element, (el) => findNearestComponent(el, this.verbose))
+        newSelectCount++
+      }
+    }
+
+    this.selectionCount = this.selectionManager.getSelectedCount()
+
+    if (newSelectCount > 0) {
+      this.showToast(`Selected ${newSelectCount} element(s)`)
+    }
 
     if (this.socket?.connected) {
       this.socket.emit('selectionChanged', {
