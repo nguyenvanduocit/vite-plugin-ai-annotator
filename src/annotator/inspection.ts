@@ -41,13 +41,15 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   function addInspectionStyles(): void {
     inspectionStyleElement = document.createElement('style')
     inspectionStyleElement.id = 'annotator-toolbar-styles'
-    // Disable pointer-events on all elements to prevent hover/click effects
+    // Disable pointer-events and text selection on all elements
     // Then use elementFromPoint to track what's under the cursor
     // Exclude: annotator-toolbar, annotator-badge (selection badges), annotator-ignore
     inspectionStyleElement.textContent = `
       * {
         pointer-events: none !important;
         cursor: crosshair !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
       }
       annotator-toolbar, annotator-toolbar *,
       .annotator-badge, .annotator-badge *,
