@@ -9,8 +9,6 @@ import { XPathUtils } from '../utils/xpath'
 
 export interface SelectedElementInfo {
   color: string
-  originalOutline: string
-  originalOutlineOffset: string
   index: number
 }
 
@@ -266,37 +264,21 @@ export function createElementSelectionManager(): ElementSelectionManager {
       colorIndex++
 
       const el = element as HTMLElement
-      const originalOutline = el.style.outline
-      const originalOutlineOffset = el.style.outlineOffset
-
       el.style.outline = `2px dashed ${color}`
       el.style.outlineOffset = '2px'
 
       const badge = createBadge(index, color, element, componentFinder)
       badges.set(element, badge)
 
-      selectedElements.set(element, {
-        color,
-        originalOutline,
-        originalOutlineOffset,
-        index,
-      })
+      selectedElements.set(element, { color, index })
     },
 
     deselectElement(element: Element): void {
       const elementData = selectedElements.get(element)
       if (elementData) {
         const el = element as HTMLElement
-        if (elementData.originalOutline) {
-          el.style.outline = elementData.originalOutline
-        } else {
-          el.style.removeProperty('outline')
-        }
-        if (elementData.originalOutlineOffset) {
-          el.style.outlineOffset = elementData.originalOutlineOffset
-        } else {
-          el.style.removeProperty('outline-offset')
-        }
+        el.style.removeProperty('outline')
+        el.style.removeProperty('outline-offset')
 
         const badge = badges.get(element)
         if (badge) {
@@ -311,18 +293,10 @@ export function createElementSelectionManager(): ElementSelectionManager {
     },
 
     clearAllSelections(): void {
-      selectedElements.forEach((data, element) => {
+      selectedElements.forEach((_, element) => {
         const el = element as HTMLElement
-        if (data.originalOutline) {
-          el.style.outline = data.originalOutline
-        } else {
-          el.style.removeProperty('outline')
-        }
-        if (data.originalOutlineOffset) {
-          el.style.outlineOffset = data.originalOutlineOffset
-        } else {
-          el.style.removeProperty('outline-offset')
-        }
+        el.style.removeProperty('outline')
+        el.style.removeProperty('outline-offset')
       })
 
       badges.forEach(badge => {
