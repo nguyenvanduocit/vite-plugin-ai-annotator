@@ -36,7 +36,7 @@ export interface RpcServerClient {
     /** Call client's 'triggerSelection' method */
     triggerSelection: (mode: "inspect" | "selector", selector: string | undefined, selectorType: "css" | "xpath" | undefined, timeout?: number) => Promise<SelectionResult | RpcError>;
     /** Call client's 'captureScreenshot' method */
-    captureScreenshot: (type: "viewport" | "element", selector: string | undefined, format: "png" | "jpeg" | undefined, quality: number | undefined, timeout?: number) => Promise<ScreenshotResult | RpcError>;
+    captureScreenshot: (type: "viewport" | "element", selector: string | undefined, quality: number | undefined, timeout?: number) => Promise<ScreenshotResult | RpcError>;
     /** Call client's 'clearSelection' method */
     clearSelection: () => void;
     /** Call client's 'injectCSS' method */
@@ -153,9 +153,9 @@ export function createRpcServer(socket: Socket): RpcServer {
                 return { message: err instanceof Error ? err.message : String(err), code: 'INTERNAL_ERROR', data: undefined };
             }
         },
-        async captureScreenshot(type: "viewport" | "element", selector: string | undefined, format: "png" | "jpeg" | undefined, quality: number | undefined, timeout: number = 5000): Promise<ScreenshotResult | RpcError> {
+        async captureScreenshot(type: "viewport" | "element", selector: string | undefined, quality: number | undefined, timeout: number = 5000): Promise<ScreenshotResult | RpcError> {
             try {
-                return await socket.timeout(timeout).emitWithAck('captureScreenshot', type, selector, format, quality);
+                return await socket.timeout(timeout).emitWithAck('captureScreenshot', type, selector, quality);
             } catch (err) {
                 return { message: err instanceof Error ? err.message : String(err), code: 'INTERNAL_ERROR', data: undefined };
             }

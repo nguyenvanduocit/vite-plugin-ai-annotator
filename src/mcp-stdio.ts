@@ -63,10 +63,10 @@ function getScreenshotCacheDir(): string {
   return cacheDir
 }
 
-function saveScreenshot(base64: string, format: 'png' | 'jpeg'): string {
+function saveScreenshot(base64: string): string {
   const cacheDir = getScreenshotCacheDir()
   const timestamp = Date.now()
-  const filename = `screenshot-${timestamp}.${format}`
+  const filename = `screenshot-${timestamp}.webp`
   const filePath = path.join(cacheDir, filename)
   const buffer = Buffer.from(base64, 'base64')
   fs.writeFileSync(filePath, buffer)
@@ -344,21 +344,20 @@ async function main() {
   // Tool: annotator_capture_screenshot
   mcp.tool(
     'annotator_capture_screenshot',
-    'Capture a screenshot of the viewport or a specific element. Returns the file path.',
+    'Capture a screenshot (webp) of the viewport or a specific element. Returns the file path.',
     {
       sessionId: sessionIdParam,
       type: z.enum(['viewport', 'element']).default('viewport').describe('Type of screenshot'),
       selector: z.string().optional().describe('CSS selector for element screenshot'),
-      format: z.enum(['png', 'jpeg']).default('png').describe('Image format'),
-      quality: z.number().min(0).max(1).default(0.8).describe('Image quality (0-1)'),
+      quality: z.number().min(0).max(1).default(0.7).describe('Image quality (0-1)'),
     },
-    async ({ sessionId, type, selector, format, quality }) => {
+    async ({ sessionId, type, selector, quality }) => {
       try {
         const result = await callServer<{ success: boolean; base64?: string; error?: string }>(
-          getSocket(), 'mcp:captureScreenshot', [sessionId, type, selector, format, quality], 30000
+          getSocket(), 'mcp:captureScreenshot', [sessionId, type, selector, quality], 30000
         )
         if (result.success && result.base64) {
-          const filePath = saveScreenshot(result.base64, format)
+          const filePath = saveScreenshot(result.base64)
           return textResponse(filePath)
         }
         return textResponse(`Screenshot failed: ${result.error}`)

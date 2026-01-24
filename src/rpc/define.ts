@@ -95,8 +95,8 @@ export interface ClientFunctions {
   // Trigger element selection mode or select by selector
   triggerSelection: (mode: 'inspect' | 'selector', selector?: string, selectorType?: 'css' | 'xpath') => SelectionResult
 
-  // Capture screenshot
-  captureScreenshot: (type: 'viewport' | 'element', selector?: string, format?: 'png' | 'jpeg', quality?: number) => ScreenshotResult
+  // Capture screenshot (always webp for small size)
+  captureScreenshot: (type: 'viewport' | 'element', selector?: string, quality?: number) => ScreenshotResult
 
   // Clear all selections
   clearSelection: () => void

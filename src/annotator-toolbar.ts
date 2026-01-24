@@ -409,8 +409,8 @@ export class AnnotatorToolbar extends LitElement {
     this.rpc.handle.triggerSelection(async (mode, selector, selectorType) =>
       this.triggerSelection(mode, selector, selectorType)
     )
-    this.rpc.handle.captureScreenshot(async (type, selector, format, quality) =>
-      this.captureScreenshot(type, selector, format, quality)
+    this.rpc.handle.captureScreenshot(async (type, selector, quality) =>
+      this.captureScreenshot(type, selector, quality)
     )
     this.rpc.handle.clearSelection(async () => this.clearSelection())
     this.rpc.handle.ping(async () => 'pong')
@@ -522,8 +522,7 @@ export class AnnotatorToolbar extends LitElement {
   private async captureScreenshot(
     type: 'viewport' | 'element',
     selector?: string,
-    format: 'png' | 'jpeg' = 'png',
-    quality: number = 0.8
+    quality: number = 0.7
   ): Promise<ScreenshotResult> {
     try {
       let targetElement: Element = document.body
@@ -541,9 +540,9 @@ export class AnnotatorToolbar extends LitElement {
 
       const blob = await toBlob(targetElement as HTMLElement, {
         quality,
-        type: format === 'png' ? 'image/png' : 'image/jpeg',
-        cacheBust: true, // Avoid caching issues
-        skipFonts: true, // Avoid font loading issues that can cause failures
+        type: 'image/webp',
+        cacheBust: true,
+        skipFonts: true,
       })
 
       if (!blob) {

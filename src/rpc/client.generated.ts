@@ -26,7 +26,7 @@ export interface RpcClientHandle {
     /** Register handler for 'triggerSelection' - called by server */
     triggerSelection: (handler: (mode: "inspect" | "selector", selector: string | undefined, selectorType: "css" | "xpath" | undefined) => Promise<SelectionResult | RpcError>) => void;
     /** Register handler for 'captureScreenshot' - called by server */
-    captureScreenshot: (handler: (type: "viewport" | "element", selector: string | undefined, format: "png" | "jpeg" | undefined, quality: number | undefined) => Promise<ScreenshotResult | RpcError>) => void;
+    captureScreenshot: (handler: (type: "viewport" | "element", selector: string | undefined, quality: number | undefined) => Promise<ScreenshotResult | RpcError>) => void;
     /** Register handler for 'clearSelection' - called by server */
     clearSelection: (handler: () => Promise<void | RpcError>) => void;
     /** Register handler for 'injectCSS' - called by server */
@@ -137,11 +137,11 @@ export function createRpcClient(socket: Socket): RpcClient {
             socket.on('triggerSelection', listener);
             unsubscribers.push(() => socket.off('triggerSelection', listener));
         },
-        captureScreenshot(handler: (type: "viewport" | "element", selector: string | undefined, format: "png" | "jpeg" | undefined, quality: number | undefined) => Promise<ScreenshotResult | RpcError>) {
+        captureScreenshot(handler: (type: "viewport" | "element", selector: string | undefined, quality: number | undefined) => Promise<ScreenshotResult | RpcError>) {
             checkDisposed();
-            const listener = async (type: "viewport" | "element", selector: string | undefined, format: "png" | "jpeg" | undefined, quality: number | undefined, callback: (result: ScreenshotResult | RpcError) => void) => {
+            const listener = async (type: "viewport" | "element", selector: string | undefined, quality: number | undefined, callback: (result: ScreenshotResult | RpcError) => void) => {
                 try {
-                    const result = await handler(type, selector, format, quality);
+                    const result = await handler(type, selector, quality);
                     callback(result);
                 } catch (error) {
                     console.error('[captureScreenshot] Handler error:', error);
