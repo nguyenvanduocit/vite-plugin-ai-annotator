@@ -720,47 +720,17 @@ export async function startServer(
 }
 
 export async function stopServer(serverInstance: ServerInstance): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let ioComplete = false
-    let serverComplete = false
-    let rejected = false
-
-    function checkCompletion(): void {
-      if (ioComplete && serverComplete && !rejected) {
-        resolve()
-      }
-    }
-
+  return new Promise((resolve) => {
     // Dispose all RPC instances and close connections
     sessions.forEach(({ rpc }) => {
       rpc.dispose()
     })
     sessions.clear()
 
-    serverInstance.io.close((err) => {
-      if (err && !rejected && serverInstance.verbose) {
-        console.error('Error closing Socket.IO server:', err)
-      }
-      ioComplete = true
-      checkCompletion()
+    // Socket.IO's close() handles closing the underlying HTTP server
+    serverInstance.io.close(() => {
+      resolve()
     })
-
-    // Socket.IO's close() already closes the underlying HTTP server,
-    // so only close if still listening to avoid ERR_SERVER_NOT_RUNNING
-    if (serverInstance.server.listening) {
-      serverInstance.server.close((error) => {
-        if (error && !rejected) {
-          rejected = true
-          reject(error)
-        } else {
-          serverComplete = true
-          checkCompletion()
-        }
-      })
-    } else {
-      serverComplete = true
-      checkCompletion()
-    }
   })
 }
 
