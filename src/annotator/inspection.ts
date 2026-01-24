@@ -37,7 +37,6 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   let selectionOverlay: HTMLDivElement | null = null
   let dragState: DragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
   let mouseDownTime = 0
-  let justFinishedDrag = false
 
   function addInspectionStyles(): void {
     inspectionStyleElement = document.createElement('style')
@@ -232,13 +231,10 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     currentHoveredElement = target
   }
 
-  function handleMouseUp(_e: MouseEvent): void {
+  function handleMouseUp(e: MouseEvent): void {
     const wasDragging = dragState.isDragging
 
     if (wasDragging) {
-      // Mark that we just finished dragging (to skip the click event)
-      justFinishedDrag = true
-
       // Complete drag selection
       removeSelectionOverlay()
 
@@ -252,6 +248,12 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
           onMultiSelect?.(leafElements)
         }
       }
+    } else if (mouseDownTime > 0) {
+      // Was not dragging → single click selection
+      const target = getElementAtPoint(e.clientX, e.clientY)
+      if (target && !shouldIgnoreElement?.(target)) {
+        onElementSelect?.(target)
+      }
     }
 
     // Reset drag state
@@ -259,27 +261,14 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     dragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
   }
 
-  function handleClick(e: MouseEvent): void {
-    // Skip click if we just finished dragging
-    if (justFinishedDrag) {
-      justFinishedDrag = false
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
-
-    // Check if clicking on toolbar/badge elements - let those through
-    const clickedElement = e.target as Element
-    if (shouldIgnoreElement?.(clickedElement)) return
+  function preventClick(e: MouseEvent): void {
+    // Prevent default click behavior entirely during inspection
+    const target = e.target as Element
+    if (shouldIgnoreElement?.(target)) return
 
     e.preventDefault()
     e.stopPropagation()
     e.stopImmediatePropagation()
-
-    const target = getElementAtPoint(e.clientX, e.clientY)
-    if (!target || shouldIgnoreElement?.(target)) return
-
-    onElementSelect?.(target)
   }
 
   function preventMouseEvents(e: Event): void {
@@ -334,7 +323,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       document.addEventListener('mousedown', handleMouseDown, true)
       document.addEventListener('mousemove', handleMouseMove, true)
       document.addEventListener('mouseup', handleMouseUp, true)
-      document.addEventListener('click', handleClick, true)
+      document.addEventListener('click', preventClick, true)
       document.addEventListener('dblclick', preventMouseEvents, true)
       document.addEventListener('contextmenu', preventMouseEvents, true)
       // Keyboard: no capture needed - we only handle specific shortcuts, not blocking
@@ -350,7 +339,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       document.removeEventListener('mousedown', handleMouseDown, true)
       document.removeEventListener('mousemove', handleMouseMove, true)
       document.removeEventListener('mouseup', handleMouseUp, true)
-      document.removeEventListener('click', handleClick, true)
+      document.removeEventListener('click', preventClick, true)
       document.removeEventListener('dblclick', preventMouseEvents, true)
       document.removeEventListener('contextmenu', preventMouseEvents, true)
       document.removeEventListener('keydown', handleKeyDown)
@@ -371,7 +360,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
         document.removeEventListener('mousedown', handleMouseDown, true)
         document.removeEventListener('mousemove', handleMouseMove, true)
         document.removeEventListener('mouseup', handleMouseUp, true)
-        document.removeEventListener('click', handleClick, true)
+        document.removeEventListener('click', preventClick, true)
         document.removeEventListener('dblclick', preventMouseEvents, true)
         document.removeEventListener('contextmenu', preventMouseEvents, true)
         document.removeEventListener('keydown', handleKeyDown)
