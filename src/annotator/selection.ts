@@ -102,30 +102,29 @@ export function createElementSelectionManager(): ElementSelectionManager {
       .badge-container {
         display: flex;
         align-items: center;
-        border: 2px solid ${color};
+        border: 1px solid ${color};
         background: #050505;
-        box-shadow: 2px 2px 0px ${color}44, 0 0 10px ${glowColor}60;
+        box-shadow: 1px 1px 0px ${color}44, 0 0 6px ${glowColor}60;
         animation: badge-glow 2s ease-in-out infinite;
       }
       .badge {
-        height: 20px;
-        padding: 0 8px;
+        height: 14px;
+        padding: 0 4px;
         background-color: ${color};
         color: ${textColor};
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
         pointer-events: none;
         white-space: nowrap;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
       }
       .edit-btn {
-        height: 20px;
-        width: 24px;
+        height: 14px;
+        width: 18px;
         background-color: transparent;
         border: none;
         border-left: 1px solid ${color}44;
@@ -140,8 +139,8 @@ export function createElementSelectionManager(): ElementSelectionManager {
         background-color: ${color};
       }
       .edit-btn svg {
-        width: 12px;
-        height: 12px;
+        width: 10px;
+        height: 10px;
         color: ${color};
         opacity: 0.8;
       }
