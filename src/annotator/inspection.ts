@@ -227,32 +227,83 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     return result
   }
 
+  function findLeafElements(elements: Element[]): Element[] {
+    // Find elements that don't have any other selected element as descendant
+    return elements.filter(el => {
+      return !elements.some(other => other !== el && el.contains(other))
+    })
+  }
+
+  function isSemanticContainer(el: Element): boolean {
+    // Check if element is a meaningful container worth selecting
+    const tag = el.tagName.toLowerCase()
+    const semanticTags = ['article', 'section', 'aside', 'nav', 'header', 'footer', 'main', 'div', 'li', 'tr', 'td', 'th', 'form', 'fieldset']
+    if (!semanticTags.includes(tag)) return false
+
+    // Check for common component class patterns
+    const className = el.className || ''
+    const hasComponentClass = /card|item|row|cell|box|panel|widget|block|container|wrapper|group|list|grid/i.test(className)
+
+    // Check for data attributes that suggest a component
+    const hasDataAttr = el.hasAttribute('data-testid') || el.hasAttribute('data-component') || el.hasAttribute('data-v-')
+
+    return hasComponentClass || hasDataAttr || tag !== 'div'
+  }
+
   function selectSmartElements(elements: Element[], selectionRect: DOMRect): Element[] {
     if (elements.length === 0) return []
     if (elements.length === 1) return elements
 
-    // Find LCA of all elements
-    const lca = findLowestCommonAncestor(elements)
-    if (!lca || lca === document.body) {
-      // Fallback: if LCA is body, find elements at similar DOM depth
-      return filterByDOMDepth(elements)
+    // Get leaf elements only (most specific)
+    const leafElements = findLeafElements(elements)
+    if (leafElements.length === 0) return elements.slice(0, 1)
+    if (leafElements.length === 1) return leafElements
+
+    // Find LCA of leaf elements
+    const lca = findLowestCommonAncestor(leafElements)
+    if (!lca || lca === document.body || lca === document.documentElement) {
+      return filterByDOMDepth(leafElements)
     }
 
-    // Find direct children of LCA that are in the selection
-    const directChildren = findDirectChildrenInRect(lca, selectionRect, elements)
+    // Check if all leaf elements are direct children of LCA
+    const allDirectChildren = leafElements.every(el => el.parentElement === lca)
 
-    // If only one direct child, it might be too high level - go deeper
+    if (allDirectChildren) {
+      // All elements are siblings → select their parent (the container)
+      // Example: 3 buttons directly in card → select card
+      return [lca]
+    }
+
+    // Elements are nested in sub-containers
+    // Find the direct children of LCA that contain our elements
+    const directChildren = findDirectChildrenInRect(lca, selectionRect, leafElements)
+
     if (directChildren.length === 1) {
+      // Only one branch contains all elements → recurse into it
       const child = directChildren[0]
-      const childElements = elements.filter(el => child.contains(el) && el !== child)
-      if (childElements.length > 1) {
-        // Recurse to find better selection within this child
-        return selectSmartElements(childElements, selectionRect)
+      const childLeafElements = leafElements.filter(el => child.contains(el))
+
+      if (childLeafElements.length > 1) {
+        // Check if all are direct children of this child
+        const allDirectOfChild = childLeafElements.every(el => el.parentElement === child)
+        if (allDirectOfChild) {
+          // Example: 3 buttons in footer → select footer
+          return [child]
+        }
+        // Recurse deeper
+        return selectSmartElements(childLeafElements, selectionRect)
       }
-      return directChildren
+      return [child]
     }
 
-    return directChildren.length > 0 ? directChildren : elements.slice(0, 1)
+    // Multiple branches selected
+    // Check if LCA is a semantic container worth selecting
+    if (isSemanticContainer(lca)) {
+      return [lca]
+    }
+
+    // Otherwise return the direct children (sub-containers)
+    return directChildren.length > 0 ? directChildren : [lca]
   }
 
   function filterByDOMDepth(elements: Element[]): Element[] {
