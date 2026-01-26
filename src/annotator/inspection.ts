@@ -102,8 +102,10 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     }
 
     const overlay = document.createElement('div')
-    overlay.className = 'annotator-hover-overlay annotator-ignore'
+    overlay.className = 'annotator-hover-overlay'
     const rect = element.getBoundingClientRect()
+    // NOTE: Do NOT add 'annotator-ignore' class - it would override pointer-events: none
+    // via inspection styles' !important rule, blocking element selection
     overlay.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
