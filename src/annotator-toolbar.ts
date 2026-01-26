@@ -268,8 +268,8 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-btn svg {
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
     }
 
     .hidden {
