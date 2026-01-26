@@ -742,6 +742,8 @@ export class AnnotatorToolbar extends LitElement {
 
     // Add keyboard listener for ESC and Enter
     document.addEventListener('keydown', this.handlePopoverKeydown)
+    // Add click-outside listener (delayed to avoid immediate close from current click)
+    setTimeout(() => document.addEventListener('click', this.handleClickOutside, true), 0)
 
     // Setup floating-ui positioning after render
     this.updateComplete.then(() => {
@@ -785,6 +787,20 @@ export class AnnotatorToolbar extends LitElement {
     }
   }
 
+  private handleClickOutside = (e: MouseEvent) => {
+    if (!this.commentPopover.visible) return
+
+    const popoverEl = this.shadowRoot?.querySelector('.popover')
+    if (!popoverEl) return
+
+    // Check if click is inside popover
+    const path = e.composedPath()
+    if (path.includes(popoverEl)) return
+
+    // Click is outside, close popover
+    this.hideCommentPopover()
+  }
+
   private handlePopoverInputKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -798,6 +814,7 @@ export class AnnotatorToolbar extends LitElement {
 
   private hideCommentPopover() {
     document.removeEventListener('keydown', this.handlePopoverKeydown)
+    document.removeEventListener('click', this.handleClickOutside, true)
     if (this.popoverCleanup) {
       this.popoverCleanup()
       this.popoverCleanup = null
