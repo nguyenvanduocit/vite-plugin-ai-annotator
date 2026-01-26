@@ -217,9 +217,8 @@ export class AnnotatorToolbar extends LitElement {
 
     .popover-input {
       width: 240px;
-      min-height: 40px;
       max-height: 120px;
-      padding: 10px 12px;
+      padding: 8px 12px;
       border: none;
       background: transparent;
       color: var(--cyber-yellow);
@@ -229,6 +228,7 @@ export class AnnotatorToolbar extends LitElement {
       resize: none;
       overflow-y: auto;
       line-height: 1.4;
+      box-sizing: border-box;
     }
 
     .popover-input::placeholder {
