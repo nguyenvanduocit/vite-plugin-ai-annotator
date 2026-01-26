@@ -12,7 +12,7 @@ import { LitElement, html, css } from 'lit'
 import { customElement, property, state } from 'lit/decorators.js'
 import { io, Socket } from 'socket.io-client'
 import { toBlob } from 'html-to-image'
-import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/dom'
+import { computePosition, offset, flip, shift, autoUpdate, autoPlacement } from '@floating-ui/dom'
 
 import { createElementSelectionManager, type ElementSelectionManager, type SelectedElementInfo } from './annotator/selection'
 import { createInspectionManager, type InspectionManager } from './annotator/inspection'
@@ -687,7 +687,6 @@ export class AnnotatorToolbar extends LitElement {
     // Skip if already selected (shouldn't happen, but safety check)
     if (this.selectionManager.hasElement(element)) return
 
-    // Select the element and show popover
     this.selectionManager.selectElement(element, (el) => findNearestComponent(el, this.verbose))
     this.showCommentPopoverForElement(element)
 
@@ -728,24 +727,18 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private showCommentPopoverForElement(element: Element) {
-    // Clean up previous popover positioning
     if (this.popoverCleanup) {
       this.popoverCleanup()
       this.popoverCleanup = null
     }
 
-    const existingComment = this.elementComments.get(element) || ''
-
     this.commentPopover = {
       visible: true,
       element,
-      comment: existingComment
+      comment: this.elementComments.get(element) || ''
     }
 
-    // Add keyboard listener for ESC and Enter
     document.addEventListener('keydown', this.handlePopoverKeydown)
-    // Add click-outside listener (delayed to avoid immediate close from current click)
-    // Clear any pending timeout to prevent race condition
     if (this.clickListenerTimeout) {
       clearTimeout(this.clickListenerTimeout)
     }
@@ -754,29 +747,36 @@ export class AnnotatorToolbar extends LitElement {
       this.clickListenerTimeout = null
     }, 0)
 
-    // Setup floating-ui positioning after render
     this.updateComplete.then(() => {
       const popoverEl = this.shadowRoot?.querySelector('.popover') as HTMLElement
       const textareaEl = this.shadowRoot?.querySelector('.popover-input') as HTMLTextAreaElement
       if (!popoverEl || !element) return
 
-      // Auto-focus and auto-resize textarea
       if (textareaEl) {
         textareaEl.focus()
         this.autoResizeTextarea(textareaEl, 37)
       }
 
-      // Use badge as reference (better positioning for large elements)
-      const badge = this.selectionManager?.getBadgeForElement(element)
-      const referenceEl = badge || element
+      // Virtual reference: element's visible top-left corner within viewport
+      // Simple, consistent, no dependency on badge async positioning
+      const virtualRef = {
+        getBoundingClientRect: () => {
+          const rect = element.getBoundingClientRect()
+          const x = Math.max(rect.left, 16)
+          const y = Math.max(rect.top, 16)
+          return new DOMRect(x, y, 0, 0)
+        }
+      }
 
-      this.popoverCleanup = autoUpdate(referenceEl, popoverEl, () => {
-        computePosition(referenceEl, popoverEl, {
+      this.popoverCleanup = autoUpdate(element, popoverEl, () => {
+        computePosition(virtualRef, popoverEl, {
           strategy: 'fixed',
-          placement: 'bottom-start',
           middleware: [
             offset(8),
-            flip(),
+            autoPlacement({
+              alignment: 'start',
+              allowedPlacements: ['bottom-start', 'bottom-end', 'top-start', 'top-end'],
+            }),
             shift({ padding: 8 }),
           ],
         }).then(({ x, y }) => {
