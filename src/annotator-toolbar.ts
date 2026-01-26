@@ -182,6 +182,8 @@ export class AnnotatorToolbar extends LitElement {
       top: 0;
       left: 0;
       z-index: 1000000;
+      display: flex;
+      flex-direction: column;
       background: var(--cyber-black);
       border: 2px solid var(--cyber-cyan);
       box-shadow: 4px 4px 0px rgba(0, 255, 255, 0.3), 0 0 30px rgba(0, 255, 255, 0.2);
@@ -215,8 +217,8 @@ export class AnnotatorToolbar extends LitElement {
 
     .popover-input {
       width: 240px;
-      min-height: 24px;
-      max-height: 37px;
+      min-height: 40px;
+      max-height: 120px;
       padding: 10px 12px;
       border: none;
       background: transparent;
@@ -234,20 +236,20 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-actions {
-      position: absolute;
-      bottom: 6px;
-      right: 6px;
       display: flex;
       align-items: center;
-      gap: 2px;
+      justify-content: flex-end;
+      gap: 4px;
+      padding: 6px 8px;
+      border-top: 1px solid rgba(0, 255, 255, 0.2);
     }
 
     .popover-btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
+      width: 26px;
+      height: 26px;
       border: 1px solid rgba(0, 255, 255, 0.3);
       background: transparent;
       color: rgba(0, 255, 255, 0.6);
@@ -268,8 +270,8 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-btn svg {
-      width: 18px;
-      height: 18px;
+      width: 14px;
+      height: 14px;
     }
 
     .hidden {
