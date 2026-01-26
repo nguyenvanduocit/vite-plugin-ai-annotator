@@ -812,7 +812,7 @@ export class AnnotatorToolbar extends LitElement {
 
     // Auto-resize textarea
     target.style.height = 'auto'
-    target.style.height = Math.min(target.scrollHeight, 37) + 'px'
+    target.style.height = Math.min(target.scrollHeight, 120) + 'px'
 
     this.commentPopover = { ...this.commentPopover, comment }
 
