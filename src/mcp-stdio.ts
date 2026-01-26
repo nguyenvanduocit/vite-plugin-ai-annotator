@@ -344,17 +344,16 @@ async function main() {
   // Tool: annotator_capture_screenshot
   mcp.tool(
     'annotator_capture_screenshot',
-    'Capture a screenshot (webp) of the viewport or a specific element. Returns the file path.',
+    'Capture a screenshot (webp) of a specific element. Returns the file path.',
     {
       sessionId: sessionIdParam,
-      type: z.enum(['viewport', 'element']).default('viewport').describe('Type of screenshot'),
-      selector: z.string().optional().describe('CSS selector for element screenshot'),
+      selector: z.string().describe('CSS selector for the element to capture (required)'),
       quality: z.number().min(0).max(1).default(0.7).describe('Image quality (0-1)'),
     },
-    async ({ sessionId, type, selector, quality }) => {
+    async ({ sessionId, selector, quality }) => {
       try {
         const result = await callServer<{ success: boolean; base64?: string; error?: string }>(
-          getSocket(), 'mcp:captureScreenshot', [sessionId, type, selector, quality], 30000
+          getSocket(), 'mcp:captureScreenshot', [sessionId, 'element', selector, quality], 30000
         )
         if (result.success && result.base64) {
           const filePath = saveScreenshot(result.base64)

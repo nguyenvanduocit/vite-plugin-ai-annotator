@@ -36,7 +36,8 @@ Works with all Vite-supported frameworks:
 Install the **Claude Code plugin** and let AI set everything up for you:
 
 ```bash
-claude plugin install claude-annotator-plugin@nguyenvanduocit
+/plugin marketplace add nguyenvanduocit/claude-annotator-plugin
+/plugin install claude-annotator-plugin@claude-annotator-plugin
 ```
 
 Then ask Claude: *"Set up ai-annotator for my project"* - it handles the rest!
