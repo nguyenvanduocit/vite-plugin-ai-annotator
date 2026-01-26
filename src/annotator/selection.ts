@@ -6,20 +6,13 @@ import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/d
 import type { ElementData } from '../rpc/define'
 import type { ComponentInfo } from './detectors'
 import { XPathUtils } from '../utils/xpath'
+import { Z_INDEX } from './constants'
 
 export interface SelectedElementInfo {
   color: string
   index: number
   displayText: string // Store for reindexing
 }
-
-// Z-index hierarchy constants
-const Z_INDEX = {
-  HIGHLIGHT_OVERLAY: 999996,
-  HOVER_OVERLAY: 999997,
-  BADGE: 999998,
-  TOOLBAR: 999999,
-} as const
 
 // Selection group - all UI elements for one selected element share ONE position tracker
 interface SelectionGroup {
@@ -42,6 +35,7 @@ export interface ElementSelectionManager {
   findSelectedChildren(element: Element): Element[]
   buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[]
   setOnEditClick(callback: (element: Element) => void): void
+  getBadgeForElement(element: Element): HTMLElement | null
 }
 
 export function createElementSelectionManager(): ElementSelectionManager {
@@ -401,6 +395,10 @@ export function createElementSelectionManager(): ElementSelectionManager {
       }
 
       return rootElements.map(element => buildElementInfo(element))
+    },
+
+    getBadgeForElement(element: Element): HTMLElement | null {
+      return selectionGroups.get(element)?.badge || null
     }
   }
 }

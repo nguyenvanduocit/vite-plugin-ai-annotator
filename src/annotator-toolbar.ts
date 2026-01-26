@@ -19,6 +19,7 @@ import { createInspectionManager, type InspectionManager } from './annotator/ins
 import { findNearestComponent } from './annotator/detectors'
 import type { ElementData, PageContext, SelectionResult, ScreenshotResult, ConsoleEntry, InjectResult } from './rpc/define'
 import { createRpcClient, type RpcClient } from './rpc/client.generated'
+import { CONSOLE_LIMITS, SCREENSHOT_TIMEOUT_MS } from './annotator/constants'
 
 const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug'] as const
 
@@ -50,6 +51,7 @@ export class AnnotatorToolbar extends LitElement {
   private popoverCleanup: (() => void) | null = null
   private tooltipCleanup: (() => void) | null = null
   private toastTimeout: ReturnType<typeof setTimeout> | null = null
+  private clickListenerTimeout: ReturnType<typeof setTimeout> | null = null
 
   private socket: Socket | null = null
   private rpc: RpcClient | null = null
@@ -369,34 +371,44 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private initializeConsoleCapture() {
-    CONSOLE_METHODS.forEach((method) => {
-      this.originalConsoleMethods[method] = console[method].bind(console)
+    try {
+      // Save all originals first (atomic-like approach)
+      CONSOLE_METHODS.forEach((method) => {
+        this.originalConsoleMethods[method] = console[method].bind(console)
+      })
 
-      console[method] = (...args: unknown[]) => {
-        // Store in buffer with size limit per entry
-        const MAX_ARG_LENGTH = 10000
-        this.consoleBuffer.push({
-          type: method,
-          args: args.map(arg => {
-            try {
-              const str = typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-              return str.length > MAX_ARG_LENGTH ? str.slice(0, MAX_ARG_LENGTH) + '...[truncated]' : str
-            } catch {
-              return '[circular or unserializable]'
-            }
-          }),
-          timestamp: Date.now()
-        })
+      // Then override all
+      CONSOLE_METHODS.forEach((method) => {
+        console[method] = (...args: unknown[]) => {
+          this.consoleBuffer.push({
+            type: method,
+            args: args.map(arg => {
+              try {
+                const str = typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                return str.length > CONSOLE_LIMITS.MAX_ARG_LENGTH
+                  ? str.slice(0, CONSOLE_LIMITS.MAX_ARG_LENGTH) + '...[truncated]'
+                  : str
+              } catch {
+                return '[circular or unserializable]'
+              }
+            }),
+            timestamp: Date.now()
+          })
 
-        // Limit buffer size to prevent memory issues
-        if (this.consoleBuffer.length > 1000) {
-          this.consoleBuffer = this.consoleBuffer.slice(-500)
+          // Limit buffer size to prevent memory issues
+          if (this.consoleBuffer.length > CONSOLE_LIMITS.BUFFER_MAX) {
+            this.consoleBuffer = this.consoleBuffer.slice(-CONSOLE_LIMITS.BUFFER_TRIM_TO)
+          }
+
+          // Call original method
+          this.originalConsoleMethods[method]?.(...args)
         }
-
-        // Call original method
-        this.originalConsoleMethods[method]?.(...args)
-      }
-    })
+      })
+    } catch (error) {
+      // Rollback on any error
+      this.restoreConsoleMethods()
+      throw error
+    }
   }
 
   private restoreConsoleMethods() {
@@ -579,12 +591,19 @@ export class AnnotatorToolbar extends LitElement {
 
       this.log(`Capturing screenshot of ${type === 'element' ? selector : 'viewport'}`)
 
-      const blob = await toBlob(targetElement as HTMLElement, {
+      // Add timeout to prevent hanging on complex pages
+      const screenshotPromise = toBlob(targetElement as HTMLElement, {
         quality,
         type: 'image/webp',
         cacheBust: true,
         skipFonts: true,
       })
+
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('Screenshot timeout')), SCREENSHOT_TIMEOUT_MS)
+      )
+
+      const blob = await Promise.race([screenshotPromise, timeoutPromise])
 
       if (!blob) {
         this.log('toBlob returned null - screenshot capture failed')
@@ -673,13 +692,7 @@ export class AnnotatorToolbar extends LitElement {
     this.showCommentPopoverForElement(element)
 
     this.selectionCount = this.selectionManager.getSelectedCount()
-
-    if (this.socket?.connected) {
-      this.socket.emit('selectionChanged', {
-        count: this.selectionCount,
-        elements: this.getSelectedElements(),
-      })
-    }
+    this.emitSelectionChanged()
   }
 
   private handleMultiSelect(elements: Element[]) {
@@ -699,12 +712,7 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast(`Selected ${newSelectCount} element(s)`)
     }
 
-    if (this.socket?.connected) {
-      this.socket.emit('selectionChanged', {
-        count: this.selectionCount,
-        elements: this.getSelectedElements(),
-      })
-    }
+    this.emitSelectionChanged()
   }
 
   private removeSelectedElement() {
@@ -716,13 +724,7 @@ export class AnnotatorToolbar extends LitElement {
     this.hideCommentPopover()
 
     this.selectionCount = this.selectionManager.getSelectedCount()
-
-    if (this.socket?.connected) {
-      this.socket.emit('selectionChanged', {
-        count: this.selectionCount,
-        elements: this.getSelectedElements(),
-      })
-    }
+    this.emitSelectionChanged()
   }
 
   private showCommentPopoverForElement(element: Element) {
@@ -743,7 +745,14 @@ export class AnnotatorToolbar extends LitElement {
     // Add keyboard listener for ESC and Enter
     document.addEventListener('keydown', this.handlePopoverKeydown)
     // Add click-outside listener (delayed to avoid immediate close from current click)
-    setTimeout(() => document.addEventListener('click', this.handleClickOutside, true), 0)
+    // Clear any pending timeout to prevent race condition
+    if (this.clickListenerTimeout) {
+      clearTimeout(this.clickListenerTimeout)
+    }
+    this.clickListenerTimeout = setTimeout(() => {
+      document.addEventListener('click', this.handleClickOutside, true)
+      this.clickListenerTimeout = null
+    }, 0)
 
     // Setup floating-ui positioning after render
     this.updateComplete.then(() => {
@@ -754,17 +763,20 @@ export class AnnotatorToolbar extends LitElement {
       // Auto-focus and auto-resize textarea
       if (textareaEl) {
         textareaEl.focus()
-        textareaEl.style.height = 'auto'
-        textareaEl.style.height = Math.min(textareaEl.scrollHeight, 37) + 'px'
+        this.autoResizeTextarea(textareaEl, 37)
       }
 
-      this.popoverCleanup = autoUpdate(element, popoverEl, () => {
-        computePosition(element, popoverEl, {
+      // Use badge as reference (better positioning for large elements)
+      const badge = this.selectionManager?.getBadgeForElement(element)
+      const referenceEl = badge || element
+
+      this.popoverCleanup = autoUpdate(referenceEl, popoverEl, () => {
+        computePosition(referenceEl, popoverEl, {
           strategy: 'fixed',
           placement: 'bottom-start',
           middleware: [
             offset(8),
-            flip({ fallbackPlacements: ['top-start', 'bottom-end', 'top-end', 'right', 'left'] }),
+            flip(),
             shift({ padding: 8 }),
           ],
         }).then(({ x, y }) => {
@@ -813,6 +825,11 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private hideCommentPopover() {
+    // Clear pending click listener timeout to prevent race condition
+    if (this.clickListenerTimeout) {
+      clearTimeout(this.clickListenerTimeout)
+      this.clickListenerTimeout = null
+    }
     document.removeEventListener('keydown', this.handlePopoverKeydown)
     document.removeEventListener('click', this.handleClickOutside, true)
     if (this.popoverCleanup) {
@@ -827,10 +844,7 @@ export class AnnotatorToolbar extends LitElement {
     const comment = target.value
     const element = this.commentPopover.element
 
-    // Auto-resize textarea
-    target.style.height = 'auto'
-    target.style.height = Math.min(target.scrollHeight, 120) + 'px'
-
+    this.autoResizeTextarea(target)
     this.commentPopover = { ...this.commentPopover, comment }
 
     // Auto-save comment
@@ -883,6 +897,19 @@ export class AnnotatorToolbar extends LitElement {
     if (this.verbose) {
       console.log('[AI Annotator]', ...args)
     }
+  }
+
+  private emitSelectionChanged() {
+    if (!this.socket?.connected) return
+    this.socket.emit('selectionChanged', {
+      count: this.selectionCount,
+      elements: this.getSelectedElements(),
+    })
+  }
+
+  private autoResizeTextarea(textarea: HTMLTextAreaElement, maxHeight = 120) {
+    textarea.style.height = 'auto'
+    textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px'
   }
 
   private exitInspectingMode() {

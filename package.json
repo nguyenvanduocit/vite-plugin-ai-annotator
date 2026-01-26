@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-ai-annotator",
-  "version": "1.1.39",
+  "version": "1.1.40",
   "description": "AI-powered element annotator for Vite - Pick elements and get instant AI code modifications",
   "type": "module",
   "main": "dist/vite-plugin.js",
@@ -74,7 +74,6 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.13.4",
     "esbuild": "^0.25.9",
-    "tsx": "^4.7.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7"
   },

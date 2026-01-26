@@ -3,6 +3,8 @@
  * Supports both single-click selection and drag-to-select multiple elements
  */
 
+import { Z_INDEX } from './constants'
+
 export interface InspectionManager {
   enterInspectionMode(): void
   exitInspectionMode(): void
@@ -29,14 +31,6 @@ interface DragState {
 
 const DRAG_THRESHOLD = 5 // Minimum pixels to consider it a drag vs click
 const INITIAL_DRAG_STATE: DragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
-
-// Z-index hierarchy constants (must match selection.ts)
-const Z_INDEX = {
-  HIGHLIGHT_OVERLAY: 999996,
-  HOVER_OVERLAY: 999997,
-  BADGE: 999998,
-  TOOLBAR: 999999,
-} as const
 
 export function createInspectionManager(callbacks: InspectionCallbacks = {}): InspectionManager {
   const { onElementSelect, onMultiSelect, shouldIgnoreElement, isElementSelected, onEscape, onCopy } = callbacks
