@@ -10,11 +10,22 @@ import { XPathUtils } from '../utils/xpath'
 export interface SelectedElementInfo {
   color: string
   index: number
+  displayText: string // Store for reindexing
 }
 
-// Badge element with cleanup function attached
-interface BadgeElement extends HTMLElement {
-  _cleanup?: () => void
+// Z-index hierarchy constants
+const Z_INDEX = {
+  HIGHLIGHT_OVERLAY: 999996,
+  HOVER_OVERLAY: 999997,
+  BADGE: 999998,
+  TOOLBAR: 999999,
+} as const
+
+// Selection group - all UI elements for one selected element share ONE position tracker
+interface SelectionGroup {
+  badge: HTMLElement
+  overlay: HTMLElement
+  cleanup: () => void
 }
 
 // Component finder function type
@@ -35,49 +46,55 @@ export interface ElementSelectionManager {
 
 export function createElementSelectionManager(): ElementSelectionManager {
   const selectedElements = new Map<Element, SelectedElementInfo>()
-  const badges = new Map<Element, BadgeElement>()
+  const selectionGroups = new Map<Element, SelectionGroup>()
   let colorIndex = 0
   let onEditClickCallback: ((element: Element) => void) | null = null
-  // Cyberpunk color palette
-  const colors = [
-    '#FF00FF', // cyber-pink
-    '#00FFFF', // cyber-cyan
-    '#FFFF00', // cyber-yellow
-    '#FF00FF',
-    '#00FFFF',
-    '#FFFF00',
-    '#FF00FF',
-    '#00FFFF',
-    '#FFFF00',
-    '#FF00FF',
-  ]
+  let keyframesStyleElement: HTMLStyleElement | null = null
 
-  function createBadge(
-    index: number,
-    color: string,
-    element: Element,
-    componentFinder?: ComponentFinder
-  ): BadgeElement {
-    const badge = document.createElement('div') as BadgeElement
+  // Cyberpunk color palette (uses modulo for cycling)
+  const colors = ['#FF00FF', '#00FFFF', '#FFFF00'] // cyber-pink, cyber-cyan, cyber-yellow
+
+  function getDisplayText(index: number, element: Element, componentFinder?: ComponentFinder): string {
+    const component = componentFinder?.(element)
+    if (component && component.componentLocation) {
+      const componentPath = component.componentLocation.split('@')[0]
+      const fileName = componentPath.split('/').pop()
+      return `#${index} ${fileName}`
+    }
+    return `#${index} ${element.tagName}`
+  }
+
+  function ensureKeyframesStyle(): void {
+    if (!keyframesStyleElement) {
+      keyframesStyleElement = document.createElement('style')
+      keyframesStyleElement.id = 'annotator-keyframes'
+      keyframesStyleElement.textContent = `
+        @keyframes marching-ants {
+          0% { background-position: 0 0, 100% 100%, 0 100%, 100% 0; }
+          100% { background-position: 20px 0, calc(100% - 20px) 100%, 0 calc(100% - 20px), 100% 20px; }
+        }
+      `
+      document.head.appendChild(keyframesStyleElement)
+    }
+  }
+
+  // Create all UI elements for a selected element with ONE shared position tracker
+  function createSelectionGroup(element: Element, color: string, displayText: string): SelectionGroup {
+    const textColor = '#050505'
+    const glowColor = color.toLowerCase()
+
+    // --- Create Badge ---
+    const badge = document.createElement('div')
     badge.classList.add('annotator-badge')
 
     const shadow = badge.attachShadow({ mode: 'open' })
-
-    // Determine text color based on background
-    const textColor = color === '#FFFF00' ? '#050505' : '#050505'
-    const glowColor = color.toLowerCase()
-
     const style = document.createElement('style')
     style.textContent = `
       @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
 
       @keyframes badge-glow {
-        0%, 100% {
-          box-shadow: 2px 2px 0px ${color}44, 0 0 8px ${glowColor}80;
-        }
-        50% {
-          box-shadow: 2px 2px 0px ${color}66, 0 0 15px ${glowColor}aa;
-        }
+        0%, 100% { box-shadow: 2px 2px 0px ${color}44, 0 0 8px ${glowColor}80; }
+        50% { box-shadow: 2px 2px 0px ${color}66, 0 0 15px ${glowColor}aa; }
       }
 
       .badge-container {
@@ -114,15 +131,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
     const badgeContent = document.createElement('div')
     badgeContent.classList.add('badge', 'annotator-ignore')
-
-    const component = componentFinder?.(element)
-    if (component && component.componentLocation) {
-      const componentPath = component.componentLocation.split('@')[0]
-      const fileName = componentPath.split('/').pop()
-      badgeContent.textContent = `#${index} ${fileName}`
-    } else {
-      badgeContent.textContent = `#${index} ${element.tagName}`
-    }
+    badgeContent.textContent = displayText
 
     container.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -136,15 +145,47 @@ export function createElementSelectionManager(): ElementSelectionManager {
     shadow.appendChild(style)
     shadow.appendChild(container)
 
-    badge.style.position = 'fixed'
-    badge.style.top = '0'
-    badge.style.left = '0'
-    badge.style.zIndex = '999998'
-
+    badge.style.cssText = `position: fixed; top: 0; left: 0; z-index: ${Z_INDEX.BADGE};`
     document.body.appendChild(badge)
 
-    // Use floating-ui for positioning with auto-update
-    const cleanup = autoUpdate(element, badge, () => {
+    // --- Create Highlight Overlay ---
+    ensureKeyframesStyle()
+
+    const overlay = document.createElement('div')
+    overlay.className = 'annotator-highlight-overlay annotator-ignore'
+    overlay.style.cssText = `
+      position: fixed;
+      pointer-events: none;
+      box-sizing: border-box;
+      z-index: ${Z_INDEX.HIGHLIGHT_OVERLAY};
+      background:
+        linear-gradient(90deg, ${color} 50%, transparent 50%) repeat-x top left / 10px 2px,
+        linear-gradient(90deg, ${color} 50%, transparent 50%) repeat-x bottom left / 10px 2px,
+        linear-gradient(0deg, ${color} 50%, transparent 50%) repeat-y top left / 2px 10px,
+        linear-gradient(0deg, ${color} 50%, transparent 50%) repeat-y top right / 2px 10px;
+      animation: marching-ants 0.4s linear infinite;
+    `
+    document.body.appendChild(overlay)
+
+    // --- ONE autoUpdate for BOTH badge and overlay ---
+    let cleanup: (() => void) | null = null
+    cleanup = autoUpdate(element, badge, () => {
+      // Handle element removal during framework re-renders
+      if (!element.isConnected) {
+        cleanup?.()
+        badge.remove()
+        overlay.remove()
+        return
+      }
+
+      // Update overlay position (simple rect)
+      const rect = element.getBoundingClientRect()
+      overlay.style.left = `${rect.left}px`
+      overlay.style.top = `${rect.top}px`
+      overlay.style.width = `${rect.width}px`
+      overlay.style.height = `${rect.height}px`
+
+      // Update badge position (floating-ui with smart placement)
       computePosition(element, badge, {
         strategy: 'fixed',
         placement: 'top-start',
@@ -154,29 +195,28 @@ export function createElementSelectionManager(): ElementSelectionManager {
           shift({ padding: 5 }),
         ],
       }).then(({ x, y }) => {
-        Object.assign(badge.style, {
-          left: `${x}px`,
-          top: `${y}px`,
-        })
+        badge.style.left = `${x}px`
+        badge.style.top = `${y}px`
       })
     })
 
-    badge._cleanup = cleanup
-
-    return badge
+    return { badge, overlay, cleanup: cleanup! }
   }
 
   function reindexElements(): void {
     let index = 1
 
     selectedElements.forEach((data, element) => {
+      // Update index but preserve the base display text (without the index prefix)
+      const baseText = data.displayText.replace(/^#\d+\s*/, '')
       data.index = index
+      data.displayText = `#${index} ${baseText}`
 
-      const badge = badges.get(element)
-      if (badge) {
-        const badgeContent = badge.shadowRoot?.querySelector('.badge')
+      const group = selectionGroups.get(element)
+      if (group) {
+        const badgeContent = group.badge.shadowRoot?.querySelector('.badge')
         if (badgeContent) {
-          badgeContent.textContent = `#${index} ${element.tagName}`
+          badgeContent.textContent = data.displayText
         }
       }
 
@@ -215,28 +255,25 @@ export function createElementSelectionManager(): ElementSelectionManager {
       const index = selectedElements.size + 1
       colorIndex++
 
-      const el = element as HTMLElement
-      el.style.outline = `2px dashed ${color}`
-      el.style.outlineOffset = '2px'
+      // Get display text for badge (preserves component info for reindexing)
+      const displayText = getDisplayText(index, element, componentFinder)
 
-      const badge = createBadge(index, color, element, componentFinder)
-      badges.set(element, badge)
+      // Create selection group with ONE autoUpdate for both badge and overlay
+      const group = createSelectionGroup(element, color, displayText)
+      selectionGroups.set(element, group)
 
-      selectedElements.set(element, { color, index })
+      selectedElements.set(element, { color, index, displayText })
     },
 
     deselectElement(element: Element): void {
       const elementData = selectedElements.get(element)
       if (elementData) {
-        const el = element as HTMLElement
-        el.style.removeProperty('outline')
-        el.style.removeProperty('outline-offset')
-
-        const badge = badges.get(element)
-        if (badge) {
-          badge._cleanup?.()
-          badge.remove()
-          badges.delete(element)
+        const group = selectionGroups.get(element)
+        if (group) {
+          group.cleanup()
+          group.badge.remove()
+          group.overlay.remove()
+          selectionGroups.delete(element)
         }
 
         selectedElements.delete(element)
@@ -245,20 +282,22 @@ export function createElementSelectionManager(): ElementSelectionManager {
     },
 
     clearAllSelections(): void {
-      selectedElements.forEach((_, element) => {
-        const el = element as HTMLElement
-        el.style.removeProperty('outline')
-        el.style.removeProperty('outline-offset')
+      // Remove all selection groups
+      selectionGroups.forEach(group => {
+        group.cleanup()
+        group.badge.remove()
+        group.overlay.remove()
       })
-
-      badges.forEach(badge => {
-        badge._cleanup?.()
-        badge.remove()
-      })
-      badges.clear()
+      selectionGroups.clear()
 
       selectedElements.clear()
       colorIndex = 0
+
+      // Clean up keyframes style element
+      if (keyframesStyleElement) {
+        keyframesStyleElement.remove()
+        keyframesStyleElement = null
+      }
     },
 
     hasElement(element: Element): boolean {

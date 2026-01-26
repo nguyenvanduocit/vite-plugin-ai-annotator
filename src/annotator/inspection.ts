@@ -28,14 +28,25 @@ interface DragState {
 }
 
 const DRAG_THRESHOLD = 5 // Minimum pixels to consider it a drag vs click
+const INITIAL_DRAG_STATE: DragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
+
+// Z-index hierarchy constants (must match selection.ts)
+const Z_INDEX = {
+  HIGHLIGHT_OVERLAY: 999996,
+  HOVER_OVERLAY: 999997,
+  BADGE: 999998,
+  TOOLBAR: 999999,
+} as const
 
 export function createInspectionManager(callbacks: InspectionCallbacks = {}): InspectionManager {
   const { onElementSelect, onMultiSelect, shouldIgnoreElement, isElementSelected, onEscape, onCopy } = callbacks
   let isInspecting = false
   let currentHoveredElement: Element | null = null
+  let hoverOverlay: HTMLDivElement | null = null
+  let hoverKeyframesStyleElement: HTMLStyleElement | null = null
   let inspectionStyleElement: HTMLStyleElement | null = null
   let selectionOverlay: HTMLDivElement | null = null
-  let dragState: DragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
+  let dragState: DragState = { ...INITIAL_DRAG_STATE }
   let mouseDownTime = 0
 
   function addInspectionStyles(): void {
@@ -69,13 +80,54 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function removeHoverHighlight(): void {
-    if (currentHoveredElement) {
-      if (!isElementSelected?.(currentHoveredElement)) {
-        ;(currentHoveredElement as HTMLElement).style.outline = ''
-        ;(currentHoveredElement as HTMLElement).style.outlineOffset = ''
-      }
-      currentHoveredElement = null
+    if (hoverOverlay) {
+      hoverOverlay.remove()
+      hoverOverlay = null
     }
+    currentHoveredElement = null
+  }
+
+  function createHoverOverlay(element: Element): HTMLDivElement {
+    // Add keyframes animation if not already added (track for cleanup)
+    if (!hoverKeyframesStyleElement) {
+      hoverKeyframesStyleElement = document.createElement('style')
+      hoverKeyframesStyleElement.id = 'annotator-hover-keyframes'
+      hoverKeyframesStyleElement.textContent = `
+        @keyframes hover-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+      `
+      document.head.appendChild(hoverKeyframesStyleElement)
+    }
+
+    const overlay = document.createElement('div')
+    overlay.className = 'annotator-hover-overlay annotator-ignore'
+    const rect = element.getBoundingClientRect()
+    overlay.style.cssText = `
+      position: fixed;
+      left: ${rect.left}px;
+      top: ${rect.top}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      border: 2px solid #00FFFF;
+      box-sizing: border-box;
+      pointer-events: none;
+      z-index: ${Z_INDEX.HOVER_OVERLAY};
+      box-shadow: 0 0 8px #00FFFF40, inset 0 0 8px #00FFFF20;
+      animation: hover-pulse 1s ease-in-out infinite;
+    `
+    document.body.appendChild(overlay)
+    return overlay
+  }
+
+  function updateHoverOverlay(element: Element): void {
+    if (!hoverOverlay) return
+    const rect = element.getBoundingClientRect()
+    hoverOverlay.style.left = `${rect.left}px`
+    hoverOverlay.style.top = `${rect.top}px`
+    hoverOverlay.style.width = `${rect.width}px`
+    hoverOverlay.style.height = `${rect.height}px`
   }
 
   function getElementAtPoint(x: number, y: number): Element | null {
@@ -83,11 +135,13 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     if (inspectionStyleElement) {
       inspectionStyleElement.disabled = true
     }
-    const element = document.elementFromPoint(x, y)
-    if (inspectionStyleElement) {
-      inspectionStyleElement.disabled = false
+    try {
+      return document.elementFromPoint(x, y)
+    } finally {
+      if (inspectionStyleElement) {
+        inspectionStyleElement.disabled = false
+      }
     }
-    return element
   }
 
   function createSelectionOverlay(): HTMLDivElement {
@@ -98,7 +152,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       border: 2px dashed #00FFFF;
       background: rgba(0, 255, 255, 0.1);
       pointer-events: none;
-      z-index: 999999;
+      z-index: ${Z_INDEX.HOVER_OVERLAY};
       box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
     `
     document.body.appendChild(overlay)
@@ -148,28 +202,30 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       inspectionStyleElement.disabled = true
     }
 
-    const elements: Element[] = []
-    const allElements = document.body.querySelectorAll('*')
+    try {
+      const elements: Element[] = []
+      const allElements = document.body.querySelectorAll('*')
 
-    for (const element of allElements) {
-      if (shouldIgnoreElement?.(element)) continue
-      if (element.tagName === 'SCRIPT' || element.tagName === 'STYLE' || element.tagName === 'NOSCRIPT') continue
+      for (const element of allElements) {
+        if (shouldIgnoreElement?.(element)) continue
+        if (element.tagName === 'SCRIPT' || element.tagName === 'STYLE' || element.tagName === 'NOSCRIPT') continue
 
-      const elementRect = element.getBoundingClientRect()
-      // Skip elements with no visible area
-      if (elementRect.width === 0 || elementRect.height === 0) continue
+        const elementRect = element.getBoundingClientRect()
+        // Skip elements with no visible area
+        if (elementRect.width === 0 || elementRect.height === 0) continue
 
-      // Only select if element is 100% inside selection rect
-      if (isFullyContained(elementRect, rect)) {
-        elements.push(element)
+        // Only select if element is 100% inside selection rect
+        if (isFullyContained(elementRect, rect)) {
+          elements.push(element)
+        }
+      }
+
+      return elements
+    } finally {
+      if (inspectionStyleElement) {
+        inspectionStyleElement.disabled = false
       }
     }
-
-    if (inspectionStyleElement) {
-      inspectionStyleElement.disabled = false
-    }
-
-    return elements
   }
 
   function filterLeafElements(elements: Element[]): Element[] {
@@ -222,12 +278,22 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       return
     }
 
-    if (target === currentHoveredElement) return
+    // Skip if already selected
+    if (isElementSelected?.(target)) {
+      removeHoverHighlight()
+      return
+    }
+
+    if (target === currentHoveredElement) {
+      // Update position in case element moved
+      updateHoverOverlay(target)
+      return
+    }
 
     removeHoverHighlight()
 
-    ;(target as HTMLElement).style.outline = '2px solid #00FFFF'
-    ;(target as HTMLElement).style.outlineOffset = '2px'
+    // Use overlay instead of outline (z-index issue)
+    hoverOverlay = createHoverOverlay(target)
     currentHoveredElement = target
   }
 
@@ -258,7 +324,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     // Reset drag state
     mouseDownTime = 0
-    dragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
+    dragState = { ...INITIAL_DRAG_STATE }
   }
 
   function preventClick(e: MouseEvent): void {
@@ -308,8 +374,30 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
   function resetDragState(): void {
     mouseDownTime = 0
-    dragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
+    dragState = { ...INITIAL_DRAG_STATE }
     removeSelectionOverlay()
+  }
+
+  function cleanup(): void {
+    removeInspectionStyles()
+
+    document.removeEventListener('mousedown', handleMouseDown, true)
+    document.removeEventListener('mousemove', handleMouseMove, true)
+    document.removeEventListener('mouseup', handleMouseUp, true)
+    document.removeEventListener('click', preventClick, true)
+    document.removeEventListener('dblclick', preventMouseEvents, true)
+    document.removeEventListener('contextmenu', preventMouseEvents, true)
+    document.removeEventListener('keydown', handleKeyDown)
+
+    removeHoverHighlight()
+    resetDragState()
+  }
+
+  function cleanupKeyframesStyle(): void {
+    if (hoverKeyframesStyleElement) {
+      hoverKeyframesStyleElement.remove()
+      hoverKeyframesStyleElement = null
+    }
   }
 
   return {
@@ -332,20 +420,9 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     exitInspectionMode(): void {
       if (!isInspecting) return
-
       isInspecting = false
-      removeInspectionStyles()
-
-      document.removeEventListener('mousedown', handleMouseDown, true)
-      document.removeEventListener('mousemove', handleMouseMove, true)
-      document.removeEventListener('mouseup', handleMouseUp, true)
-      document.removeEventListener('click', preventClick, true)
-      document.removeEventListener('dblclick', preventMouseEvents, true)
-      document.removeEventListener('contextmenu', preventMouseEvents, true)
-      document.removeEventListener('keydown', handleKeyDown)
-
-      removeHoverHighlight()
-      resetDragState()
+      cleanup()
+      cleanupKeyframesStyle()
     },
 
     isInInspectionMode(): boolean {
@@ -355,19 +432,9 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     destroy(): void {
       if (isInspecting) {
         isInspecting = false
-        removeInspectionStyles()
-
-        document.removeEventListener('mousedown', handleMouseDown, true)
-        document.removeEventListener('mousemove', handleMouseMove, true)
-        document.removeEventListener('mouseup', handleMouseUp, true)
-        document.removeEventListener('click', preventClick, true)
-        document.removeEventListener('dblclick', preventMouseEvents, true)
-        document.removeEventListener('contextmenu', preventMouseEvents, true)
-        document.removeEventListener('keydown', handleKeyDown)
-
-        removeHoverHighlight()
-        resetDragState()
+        cleanup()
       }
+      cleanupKeyframesStyle()
     }
   }
 }
