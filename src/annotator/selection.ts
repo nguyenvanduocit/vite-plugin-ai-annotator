@@ -133,6 +133,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
     badgeContent.classList.add('badge', 'annotator-ignore')
     badgeContent.textContent = displayText
 
+    // Badge click handler (for clicking directly on badge)
     container.addEventListener('click', (e) => {
       e.stopPropagation()
       e.preventDefault()
@@ -155,7 +156,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
     overlay.className = 'annotator-highlight-overlay annotator-ignore'
     overlay.style.cssText = `
       position: fixed;
-      pointer-events: none;
+      cursor: pointer;
       box-sizing: border-box;
       z-index: ${Z_INDEX.HIGHLIGHT_OVERLAY};
       background:
@@ -165,6 +166,16 @@ export function createElementSelectionManager(): ElementSelectionManager {
         linear-gradient(0deg, ${color} 50%, transparent 50%) repeat-y top right / 2px 10px;
       animation: marching-ants 0.4s linear infinite;
     `
+
+    // Overlay handles click on selected element area
+    overlay.addEventListener('click', (e) => {
+      e.stopPropagation()
+      e.preventDefault()
+      if (onEditClickCallback) {
+        onEditClickCallback(element)
+      }
+    })
+
     document.body.appendChild(overlay)
 
     // --- ONE autoUpdate for BOTH badge and overlay ---

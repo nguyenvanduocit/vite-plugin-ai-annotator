@@ -658,21 +658,17 @@ export class AnnotatorToolbar extends LitElement {
     return logs
   }
 
+  // Called when clicking on an UNSELECTED element during inspection mode
+  // (clicks on selected elements are handled by overlay → showCommentPopoverForElement)
   private handleElementSelected(element: Element) {
     if (!this.selectionManager) return
 
-    const wasSelected = this.selectionManager.hasElement(element)
+    // Skip if already selected (shouldn't happen, but safety check)
+    if (this.selectionManager.hasElement(element)) return
 
-    if (wasSelected) {
-      // Click on already selected element → deselect it
-      this.selectionManager.deselectElement(element)
-      this.elementComments.delete(element)
-      this.hideCommentPopover()
-    } else {
-      // New selection → select and show popover
-      this.selectionManager.selectElement(element, (el) => findNearestComponent(el, this.verbose))
-      this.showCommentPopoverForElement(element)
-    }
+    // Select the element and show popover
+    this.selectionManager.selectElement(element, (el) => findNearestComponent(el, this.verbose))
+    this.showCommentPopoverForElement(element)
 
     this.selectionCount = this.selectionManager.getSelectedCount()
 
