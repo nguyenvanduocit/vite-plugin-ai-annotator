@@ -246,8 +246,8 @@ export class AnnotatorToolbar extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 32px;
+      height: 32px;
       border: 1px solid rgba(0, 255, 255, 0.3);
       background: transparent;
       color: rgba(0, 255, 255, 0.6);
@@ -268,8 +268,8 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     .popover-btn svg {
-      width: 14px;
-      height: 14px;
+      width: 18px;
+      height: 18px;
     }
 
     .hidden {
