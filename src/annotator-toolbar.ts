@@ -192,19 +192,6 @@ export class AnnotatorToolbar extends LitElement {
       animation: popover-in 0.15s ease-out;
     }
 
-    .popover::before {
-      content: '// COMMENT_INPUT';
-      position: absolute;
-      top: -20px;
-      left: -2px;
-      padding: 2px 6px;
-      font-size: 9px;
-      color: var(--cyber-cyan);
-      background: var(--cyber-black);
-      border: 1px solid var(--cyber-cyan);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
 
     @keyframes popover-in {
       from {
@@ -767,7 +754,7 @@ export class AnnotatorToolbar extends LitElement {
           placement: 'bottom-start',
           middleware: [
             offset(6),
-            flip({ fallbackPlacements: ['bottom-end', 'top-start', 'top-end'] }),
+            flip({ fallbackPlacements: ['top-start', 'bottom-end', 'top-end'] }),
             shift({ padding: 8 }),
           ],
         }).then(({ x, y }) => {
