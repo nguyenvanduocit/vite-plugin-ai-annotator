@@ -583,7 +583,20 @@ export class AnnotatorToolbar extends LitElement {
         quality,
         type: 'image/webp',
         cacheBust: true,
-        skipFonts: true,
+        pixelRatio: 1,
+        includeQueryParams: true,
+        // Filter out elements that cause issues
+        filter: (node) => {
+          if (node instanceof Element) {
+            // Skip annotator UI elements
+            if (node.classList?.contains('annotator-badge') ||
+                node.classList?.contains('annotator-highlight-overlay') ||
+                node.tagName?.toLowerCase() === 'annotator-toolbar') {
+              return false
+            }
+          }
+          return true
+        },
       })
 
       const timeoutPromise = new Promise<null>((_, reject) =>

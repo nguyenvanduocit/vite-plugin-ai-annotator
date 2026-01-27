@@ -184,6 +184,9 @@ class AiAnnotatorServer {
     if (this.options.verbose) {
       args.push('--verbose');
     }
+    if (this.options.autoSetupMcp) {
+      args.push('--skip-mcp-instructions');
+    }
 
     this.log(`Starting annotator server: ${cmd} ${args.join(' ')}`);
     this.log(`Working directory: ${this.packageDir}`);
@@ -310,11 +313,18 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
       // Auto-setup MCP configuration files
       if (options.autoSetupMcp) {
         const serverUrl = `http://${options.listenAddress ?? 'localhost'}:${options.port ?? 7318}`;
-        autoSetupMcp({
+        const result = autoSetupMcp({
           projectRoot: root,
           serverUrl,
           verbose: options.verbose,
         });
+
+        // Print result summary
+        if (result.updated.length > 0) {
+          console.log(`[ai-annotator] ✅ MCP config updated: ${result.updated.map(f => f.replace(root + '/', '')).join(', ')}`);
+        } else if (result.alreadyConfigured.length > 0) {
+          console.log(`[ai-annotator] ✅ MCP config already up-to-date`);
+        }
       }
     },
 

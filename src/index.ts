@@ -46,6 +46,7 @@ async function runServer() {
   const helpFlag = args.includes('--help') || args.includes('-h')
   const versionFlag = args.includes('--version') || args.includes('-v')
   const verboseFlag = args.includes('--verbose') || args.includes('-V')
+  const skipMcpInstructions = args.includes('--skip-mcp-instructions')
   const portFlag = args.findIndex(arg => arg === '--port' || arg === '-p')
   const listenFlag = args.findIndex(arg => arg === '--listen' || arg === '-l')
   const publicAddressFlag = args.findIndex(arg => arg === '--public-address' || arg === '-a')
@@ -157,15 +158,18 @@ Learn more: https://github.com/nguyenvanduocit/instantCode
     serverInstance = await startServer(port, listenAddress, publicAddress, isVerbose)
 
     console.log(`✅ AI Annotator server started on ${publicAddress}`)
-    console.log(``)
-    console.log(`📋 Claude Code MCP Config (~/.claude/settings.json):`)
-    console.log(``)
-    console.log(`  "mcpServers": {`)
-    console.log(`    "ai-annotator": {`)
-    console.log(`      "command": "bunx",`)
-    console.log(`      "args": ["vite-plugin-ai-annotator", "mcp", "-s", "${publicAddress}"]`)
-    console.log(`    }`)
-    console.log(`  }`)
+
+    if (!skipMcpInstructions) {
+      console.log(``)
+      console.log(`📋 Claude Code MCP Config (~/.claude/settings.json):`)
+      console.log(``)
+      console.log(`  "mcpServers": {`)
+      console.log(`    "ai-annotator": {`)
+      console.log(`      "command": "bunx",`)
+      console.log(`      "args": ["vite-plugin-ai-annotator", "mcp", "-s", "${publicAddress}"]`)
+      console.log(`    }`)
+      console.log(`  }`)
+    }
   } catch (error) {
     console.error('❌ Failed to start server:', error instanceof Error ? error.message : error)
     process.exit(1)

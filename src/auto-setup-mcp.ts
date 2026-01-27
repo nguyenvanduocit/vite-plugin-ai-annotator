@@ -144,8 +144,19 @@ ${configJson}
 `);
 }
 
-export function autoSetupMcp(options: AutoSetupMcpOptions): void {
+export interface AutoSetupResult {
+  updated: string[];
+  alreadyConfigured: string[];
+  noConfigsFound: boolean;
+}
+
+export function autoSetupMcp(options: AutoSetupMcpOptions): AutoSetupResult {
   const { projectRoot, serverUrl, verbose = false } = options;
+  const result: AutoSetupResult = {
+    updated: [],
+    alreadyConfigured: [],
+    noConfigsFound: false,
+  };
 
   const packageManager = detectPackageManager(projectRoot);
   const serverConfig = buildMcpServerConfig(packageManager, serverUrl);
@@ -158,11 +169,11 @@ export function autoSetupMcp(options: AutoSetupMcpOptions): void {
   const existingConfigs = detectExistingConfigs(projectRoot);
 
   if (existingConfigs.length === 0) {
-    // No config files detected - show generic instructions
+    result.noConfigsFound = true;
     if (verbose) {
       printGenericInstructions(serverUrl, packageManager);
     }
-    return;
+    return result;
   }
 
   // Update all detected config files
@@ -171,6 +182,13 @@ export function autoSetupMcp(options: AutoSetupMcpOptions): void {
   }
 
   for (const configFile of existingConfigs) {
-    setupConfigFile(configFile, serverConfig, verbose);
+    const wasUpdated = setupConfigFile(configFile, serverConfig, verbose);
+    if (wasUpdated) {
+      result.updated.push(configFile);
+    } else {
+      result.alreadyConfigured.push(configFile);
+    }
   }
+
+  return result;
 }
