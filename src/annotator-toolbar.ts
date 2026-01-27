@@ -12,7 +12,7 @@ import { LitElement, html, css } from 'lit'
 import { customElement, property, state } from 'lit/decorators.js'
 import { io, Socket } from 'socket.io-client'
 import { toBlob } from 'html-to-image'
-import { computePosition, offset, flip, shift, autoUpdate, autoPlacement } from '@floating-ui/dom'
+import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/dom'
 
 import { createElementSelectionManager, type ElementSelectionManager, type SelectedElementInfo } from './annotator/selection'
 import { createInspectionManager, type InspectionManager } from './annotator/inspection'
@@ -754,29 +754,20 @@ export class AnnotatorToolbar extends LitElement {
 
       if (textareaEl) {
         textareaEl.focus()
-        this.autoResizeTextarea(textareaEl, 37)
+        this.autoResizeTextarea(textareaEl)
       }
 
-      // Virtual reference: element's visible top-left corner within viewport
-      // Simple, consistent, no dependency on badge async positioning
-      const virtualRef = {
-        getBoundingClientRect: () => {
-          const rect = element.getBoundingClientRect()
-          const x = Math.max(rect.left, 16)
-          const y = Math.max(rect.top, 16)
-          return new DOMRect(x, y, 0, 0)
-        }
-      }
+      // Find the badge element for this specific selected element
+      const badge = this.selectionManager?.getBadgeForElement(element)
+      const referenceEl = badge || element
 
-      this.popoverCleanup = autoUpdate(element, popoverEl, () => {
-        computePosition(virtualRef, popoverEl, {
+      this.popoverCleanup = autoUpdate(referenceEl, popoverEl, () => {
+        computePosition(referenceEl, popoverEl, {
           strategy: 'fixed',
+          placement: 'bottom-start',
           middleware: [
-            offset(8),
-            autoPlacement({
-              alignment: 'start',
-              allowedPlacements: ['bottom-start', 'bottom-end', 'top-start', 'top-end'],
-            }),
+            offset(6),
+            flip({ fallbackPlacements: ['bottom-end', 'top-start', 'top-end'] }),
             shift({ padding: 8 }),
           ],
         }).then(({ x, y }) => {

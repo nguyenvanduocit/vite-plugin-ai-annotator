@@ -35,6 +35,7 @@ export interface ElementSelectionManager {
   findSelectedChildren(element: Element): Element[]
   buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[]
   setOnEditClick(callback: (element: Element) => void): void
+  getBadgeForElement(element: Element): HTMLElement | null
 }
 
 export function createElementSelectionManager(): ElementSelectionManager {
@@ -322,6 +323,11 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
     setOnEditClick(callback: (element: Element) => void): void {
       onEditClickCallback = callback
+    },
+
+    getBadgeForElement(element: Element): HTMLElement | null {
+      const group = selectionGroups.get(element)
+      return group?.badge || null
     },
 
     buildHierarchicalStructure(componentFinder?: ComponentFinder, imagePaths?: Map<Element, string>): ElementData[] {
