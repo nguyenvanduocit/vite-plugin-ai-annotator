@@ -63,10 +63,24 @@ export default defineConfig({
 });
 ```
 
-#### Step 3: Add MCP to Claude Code
+#### Step 3: Configure MCP
+
+**Option A: Auto Setup (Recommended)**
+
+Enable automatic MCP configuration in your Vite config:
+
+```typescript
+annotator({
+  autoSetupMcp: true,
+})
+```
+
+This automatically creates/updates `.mcp.json`, `.cursor/mcp.json`, and `.vscode/mcp.json` based on your project.
+
+**Option B: Manual Setup**
 
 ```bash
-claude mcp add annotator -- npx vite-plugin-ai-annotator -s http://localhost:7318
+claude mcp add annotator -- npx vite-plugin-ai-annotator mcp -s http://localhost:7318
 ```
 
 #### Step 4: Start your dev server
@@ -86,15 +100,30 @@ The annotator toolbar will automatically appear in your application.
 
 Example prompt: *"Make the selected button larger and change its color to blue"*
 
-## Port Configuration
-
-Default port is `7318`. You can customize it:
+## Configuration
 
 ```typescript
 annotator({
-  port: 7318,          // Server port (default: 7318)
-  verbose: false,      // Enable detailed logging (default: false)
+  port: 7318,           // Server port (default: 7318)
+  autoSetupMcp: true,   // Auto-configure MCP files (default: false)
+  verbose: false,       // Enable detailed logging (default: false)
 })
 ```
+
+### Auto MCP Setup
+
+When `autoSetupMcp: true`, the plugin automatically:
+
+1. **Detects your package manager** from lockfile:
+   - `bun.lockb` / `bun.lock` → uses `bunx`
+   - `pnpm-lock.yaml` → uses `pnpm dlx`
+   - Otherwise → uses `npx`
+
+2. **Creates/updates MCP config files**:
+   - `.mcp.json` - Claude Code, Cline, Roo Code
+   - `.cursor/mcp.json` - Cursor (only if `.cursor/` exists)
+   - `.vscode/mcp.json` - VS Code (only if `.vscode/` exists)
+
+3. **Preserves existing config** - merges with other MCP servers, doesn't overwrite
 
 **Happy coding! 🚀**

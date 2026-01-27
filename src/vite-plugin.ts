@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import { existsSync } from 'node:fs';
 import MagicString from 'magic-string';
+import { autoSetupMcp } from './auto-setup-mcp';
 
 export interface AiAnnotatorOptions {
   /**
@@ -32,6 +33,12 @@ export interface AiAnnotatorOptions {
    * @default true
    */
   injectSourceLoc?: boolean;
+  /**
+   * Automatically setup MCP configuration files in the project
+   * Detects and configures: .mcp.json, .cursor/mcp.json, .vscode/mcp.json
+   * @default false
+   */
+  autoSetupMcp?: boolean;
 }
 
 // Data attribute name for source location
@@ -114,6 +121,7 @@ class AiAnnotatorServer {
       publicAddress: options.publicAddress ?? `http://${listenAddress}:${port}`,
       verbose: options.verbose ?? false,
       injectSourceLoc: options.injectSourceLoc ?? true,
+      autoSetupMcp: options.autoSetupMcp ?? false,
     };
 
     // Detect if we're running from source (src/) or from installed package (dist/)
@@ -298,6 +306,16 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
     configResolved(config) {
       serverManager = new AiAnnotatorServer(options);
       root = config.root;
+
+      // Auto-setup MCP configuration files
+      if (options.autoSetupMcp) {
+        const serverUrl = `http://${options.listenAddress ?? 'localhost'}:${options.port ?? 7318}`;
+        autoSetupMcp({
+          projectRoot: root,
+          serverUrl,
+          verbose: options.verbose,
+        });
+      }
     },
 
     async buildStart() {
