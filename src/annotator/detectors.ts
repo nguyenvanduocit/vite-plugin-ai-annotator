@@ -400,6 +400,14 @@ function getVueComponentInfo(element: Element): ComponentInfo | null {
   let vueInstance: VueInstance | null = null
   let vnode: VueVNode | null = null
 
+  // Vue 3 with context vnode (used by vite-plugin-vue-inspector)
+  if (!codeLocation) {
+    const ctxVNode = (el.__vnode as any)?.ctx?.vnode
+    if (ctxVNode?.el === el) {
+      codeLocation = ctxVNode?.props?.__v_inspector
+    }
+  }
+
   // Vue 3 with parent component
   if (!codeLocation) {
     codeLocation = el.__vueParentComponent?.vnode?.props?.__v_inspector
@@ -430,6 +438,11 @@ function getVueComponentInfo(element: Element): ComponentInfo | null {
                     vnode.props?.__v_inspector ||
                     vnode.componentOptions?.__v_inspector
     }
+  }
+
+  // Fallback: Check data-v-inspector attribute (set by vite-plugin-vue-inspector / Nuxt DevTools)
+  if (!codeLocation) {
+    codeLocation = element.getAttribute('data-v-inspector') ?? undefined
   }
 
   if (!codeLocation) {
