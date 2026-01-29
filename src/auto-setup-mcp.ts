@@ -118,36 +118,9 @@ function detectExistingConfigs(projectRoot: string): string[] {
   return potentialConfigs.filter(existsSync);
 }
 
-/**
- * Print generic MCP setup instructions when no config files are detected
- */
-function printGenericInstructions(serverUrl: string, packageManager: PackageManager): void {
-  const config = buildMcpServerConfig(packageManager, serverUrl);
-  const configJson = JSON.stringify({
-    mcpServers: {
-      [MCP_SERVER_NAME]: config,
-    },
-  }, null, 2);
-
-  console.log(`
-[ai-annotator] No MCP configuration files detected.
-
-To enable MCP integration, create one of the following config files:
-
-  • .mcp.json (Claude Code)
-  • .cursor/mcp.json (Cursor)
-  • .vscode/mcp.json (VS Code + MCP extension)
-
-Example configuration:
-
-${configJson}
-`);
-}
-
 export interface AutoSetupResult {
   updated: string[];
   alreadyConfigured: string[];
-  noConfigsFound: boolean;
 }
 
 export function autoSetupMcp(options: AutoSetupMcpOptions): AutoSetupResult {
@@ -155,7 +128,6 @@ export function autoSetupMcp(options: AutoSetupMcpOptions): AutoSetupResult {
   const result: AutoSetupResult = {
     updated: [],
     alreadyConfigured: [],
-    noConfigsFound: false,
   };
 
   const packageManager = detectPackageManager(projectRoot);
@@ -169,9 +141,11 @@ export function autoSetupMcp(options: AutoSetupMcpOptions): AutoSetupResult {
   const existingConfigs = detectExistingConfigs(projectRoot);
 
   if (existingConfigs.length === 0) {
-    result.noConfigsFound = true;
-    if (verbose) {
-      printGenericInstructions(serverUrl, packageManager);
+    // Create default .mcp.json when no configs found
+    const defaultConfigPath = join(projectRoot, '.mcp.json');
+    const wasUpdated = setupConfigFile(defaultConfigPath, serverConfig, verbose);
+    if (wasUpdated) {
+      result.updated.push(defaultConfigPath);
     }
     return result;
   }
