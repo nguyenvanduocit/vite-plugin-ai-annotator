@@ -920,10 +920,12 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
 
-    const text = `I have selected ${elements.length} feedback item(s) in the browser. Use the \`annotator_get_feedback\` tool to retrieve them and modify the code.`
+    const sessionPart = this.sessionId ? ` (session: ${this.sessionId})` : ''
+    const text = `I have selected ${elements.length} feedback item(s) in the browser${sessionPart}. Use the \`annotator_get_feedback\` tool to retrieve them and modify the code.`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast(`Copied ${elements.length} element(s)`)
+      this.exitInspectingMode()
     } catch (error) {
       this.showToast('Failed to copy')
       this.log('Failed to copy:', error)

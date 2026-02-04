@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from 'express'
 import type { Server } from 'node:http'
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import cors from 'cors'
 import express from 'express'
@@ -13,6 +12,7 @@ import { createRpcServer, type RpcServer } from './rpc/server.generated'
 import { isRpcError } from './rpc/types.generated'
 import type { BrowserSession } from './rpc/define'
 import { createLogger, type Logger } from './utils/logger'
+import { saveScreenshot, filterFeedbackFields } from './utils/screenshot'
 
 export interface ServerInstance {
   app: Express
@@ -60,59 +60,6 @@ export function getRpc(sessionId?: string): { rpc: RpcServer; sessionId: string 
   return null
 }
 
-// Screenshot cache directory
-function getScreenshotCacheDir(): string {
-  const cacheDir = path.join(os.tmpdir(), 'ai-annotator-screenshots')
-  if (!fs.existsSync(cacheDir)) {
-    fs.mkdirSync(cacheDir, { recursive: true })
-  }
-  return cacheDir
-}
-
-function saveScreenshot(base64: string): string {
-  const cacheDir = getScreenshotCacheDir()
-  const timestamp = Date.now()
-  const filename = `screenshot-${timestamp}.webp`
-  const filePath = path.join(cacheDir, filename)
-
-  const buffer = Buffer.from(base64, 'base64')
-  fs.writeFileSync(filePath, buffer)
-
-  return filePath
-}
-
-type FeedbackField = 'xpath' | 'attributes' | 'styles' | 'children'
-const BASIC_FIELDS = ['index', 'tagName', 'cssSelector', 'textContent'] as const
-
-function filterFeedbackFields(
-  elements: Record<string, unknown>[],
-  fields?: FeedbackField[]
-): Record<string, unknown>[] {
-  return elements.map((el) => {
-    const result: Record<string, unknown> = {}
-    // basic fields, comment, and componentData are always included
-    if ('comment' in el) result.comment = el.comment
-    if ('componentData' in el) result.componentData = el.componentData
-    for (const f of BASIC_FIELDS) {
-      if (f in el) result[f] = el[f]
-    }
-
-    // additional fields only if explicitly requested
-    if (fields?.includes('xpath') && 'xpath' in el) {
-      result.xpath = el.xpath
-    }
-    if (fields?.includes('attributes') && 'attributes' in el) {
-      result.attributes = el.attributes
-    }
-    if (fields?.includes('styles') && 'computedStyles' in el) {
-      result.computedStyles = el.computedStyles
-    }
-    if (fields?.includes('children') && 'children' in el) {
-      result.children = el.children
-    }
-    return result
-  })
-}
 
 function setupRoutes(app: Express, publicAddress: string, verbose: boolean): void {
   app.get('/annotator-toolbar.js', (_req, res) => {
@@ -637,7 +584,13 @@ function setupMcpRoutes(app: Express, logger: Logger): void {
       })
 
       // Connect MCP server to this transport
-      await mcp.connect(transport)
+      try {
+        await mcp.connect(transport)
+      } catch (error) {
+        logger.error('Failed to connect MCP transport:', error)
+        res.status(500).json({ error: 'Failed to initialize MCP session' })
+        return
+      }
 
       // Store transport after connection (session ID is generated during handleRequest)
       transport.onclose = () => {

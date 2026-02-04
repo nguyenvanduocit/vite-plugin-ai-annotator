@@ -154,13 +154,13 @@ export class XPathUtils {
         }
       }
 
-      // Add nth-child if needed for uniqueness
+      // Add nth-of-type if needed for uniqueness (same tag siblings)
       const siblings = Array.from(currentElement.parentElement?.children || [])
         .filter(sibling => sibling.tagName === currentElement!.tagName)
 
       if (siblings.length > 1) {
         const index = siblings.indexOf(currentElement) + 1
-        selector += `:nth-child(${index})`
+        selector += `:nth-of-type(${index})`
       }
 
       parts.unshift(selector)

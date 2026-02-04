@@ -17,10 +17,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { io, Socket } from 'socket.io-client'
 import { z } from 'zod'
-import * as fs from 'node:fs'
-import * as os from 'node:os'
-import * as path from 'node:path'
 import type { BrowserSession } from './rpc/define'
+import { saveScreenshot, filterFeedbackFields } from './utils/screenshot'
 
 interface McpToolResponse {
   success: boolean
@@ -54,57 +52,6 @@ function parseArgs(): { serverUrl: string } {
   return { serverUrl }
 }
 
-// Screenshot cache
-function getScreenshotCacheDir(): string {
-  const cacheDir = path.join(os.tmpdir(), 'ai-annotator-screenshots')
-  if (!fs.existsSync(cacheDir)) {
-    fs.mkdirSync(cacheDir, { recursive: true })
-  }
-  return cacheDir
-}
-
-function saveScreenshot(base64: string): string {
-  const cacheDir = getScreenshotCacheDir()
-  const timestamp = Date.now()
-  const filename = `screenshot-${timestamp}.webp`
-  const filePath = path.join(cacheDir, filename)
-  const buffer = Buffer.from(base64, 'base64')
-  fs.writeFileSync(filePath, buffer)
-  return filePath
-}
-
-type FeedbackField = 'xpath' | 'attributes' | 'styles' | 'children'
-const BASIC_FIELDS = ['index', 'tagName', 'cssSelector', 'textContent'] as const
-
-function filterFeedbackFields(
-  elements: Record<string, unknown>[],
-  fields?: FeedbackField[]
-): Record<string, unknown>[] {
-  return elements.map((el) => {
-    const result: Record<string, unknown> = {}
-    // basic fields, comment, and componentData are always included
-    if ('comment' in el) result.comment = el.comment
-    if ('componentData' in el) result.componentData = el.componentData
-    for (const f of BASIC_FIELDS) {
-      if (f in el) result[f] = el[f]
-    }
-
-    // additional fields only if explicitly requested
-    if (fields?.includes('xpath') && 'xpath' in el) {
-      result.xpath = el.xpath
-    }
-    if (fields?.includes('attributes') && 'attributes' in el) {
-      result.attributes = el.attributes
-    }
-    if (fields?.includes('styles') && 'computedStyles' in el) {
-      result.computedStyles = el.computedStyles
-    }
-    if (fields?.includes('children') && 'children' in el) {
-      result.children = el.children
-    }
-    return result
-  })
-}
 
 // Reconnection state
 let reconnectAttempts = 0
