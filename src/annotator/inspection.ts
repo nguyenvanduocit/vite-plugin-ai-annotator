@@ -87,14 +87,15 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       hoverKeyframesStyleElement = document.createElement('style')
       hoverKeyframesStyleElement.id = 'annotator-hover-keyframes'
       hoverKeyframesStyleElement.textContent = `
-        @keyframes hover-pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.7; }
+        @keyframes hover-marching-ants {
+          0% { background-position: 0 0, 100% 100%, 0 100%, 100% 0; }
+          100% { background-position: 20px 0, calc(100% - 20px) 100%, 0 calc(100% - 20px), 100% 20px; }
         }
       `
       document.head.appendChild(hoverKeyframesStyleElement)
     }
 
+    const color = '#A855F7'
     const overlay = document.createElement('div')
     overlay.className = 'annotator-hover-overlay'
     const rect = element.getBoundingClientRect()
@@ -106,12 +107,16 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       top: ${rect.top}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
-      border: 2px solid #00FFFF;
       box-sizing: border-box;
       pointer-events: none;
       z-index: ${Z_INDEX.HOVER_OVERLAY};
-      box-shadow: 0 0 8px #00FFFF40, inset 0 0 8px #00FFFF20;
-      animation: hover-pulse 1s ease-in-out infinite;
+      border-radius: 4px;
+      background:
+        linear-gradient(90deg, ${color} 50%, transparent 50%) repeat-x top left / 10px 2px,
+        linear-gradient(90deg, ${color} 50%, transparent 50%) repeat-x bottom left / 10px 2px,
+        linear-gradient(0deg, ${color} 50%, transparent 50%) repeat-y top left / 2px 10px,
+        linear-gradient(0deg, ${color} 50%, transparent 50%) repeat-y top right / 2px 10px;
+      animation: hover-marching-ants 0.4s linear infinite;
     `
     document.body.appendChild(overlay)
     return overlay
@@ -145,11 +150,12 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     overlay.className = 'annotator-ignore'
     overlay.style.cssText = `
       position: fixed;
-      border: 2px dashed #00FFFF;
-      background: rgba(0, 255, 255, 0.1);
+      border: 2px dashed #A855F7;
+      background: rgba(168, 85, 247, 0.1);
       pointer-events: none;
       z-index: ${Z_INDEX.HOVER_OVERLAY};
-      box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+      border-radius: 4px;
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
     `
     document.body.appendChild(overlay)
     return overlay
