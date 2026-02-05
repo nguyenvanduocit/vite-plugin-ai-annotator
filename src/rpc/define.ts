@@ -13,12 +13,6 @@ export interface PageContext {
   isInspecting: boolean
 }
 
-export interface ElementTextSelection {
-  selectedText: string
-  containerXPath: string
-  containerCssSelector: string
-}
-
 export interface ElementComputedStyles {
   width: number
   height: number
@@ -42,10 +36,11 @@ export interface ElementData {
   xpath: string
   cssSelector: string
   textContent: string
+  /** When user selected specific text (not whole element), this contains the exact highlighted text */
+  selectedText?: string
   attributes: Record<string, string>
   imagePath?: string
   comment?: string
-  textSelection?: ElementTextSelection
   computedStyles?: ElementComputedStyles
   componentData?: ElementComponentData
   children: ElementData[]

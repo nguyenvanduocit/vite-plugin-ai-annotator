@@ -349,7 +349,6 @@ export class AnnotatorToolbar extends LitElement {
 
     this.inspectionManager = createInspectionManager({
       onElementSelect: (element) => this.handleElementSelected(element),
-      onMultiSelect: (elements) => this.handleMultiSelect(elements),
       onTextSelect: (range, commonAncestor) => this.handleTextSelected(range, commonAncestor),
       shouldIgnoreElement: (element) => this.shouldIgnoreElement(element),
       isElementSelected: (element) => this.selectionManager?.hasElement(element) || false,
@@ -691,26 +690,6 @@ export class AnnotatorToolbar extends LitElement {
     this.showCommentPopoverForElement(element)
 
     this.selectionCount = this.selectionManager.getSelectedCount()
-    this.emitSelectionChanged()
-  }
-
-  private handleMultiSelect(elements: Element[]) {
-    if (!this.selectionManager) return
-
-    let newSelectCount = 0
-    for (const element of elements) {
-      if (!this.selectionManager.hasElement(element)) {
-        this.selectionManager.selectElement(element, (el) => findNearestComponent(el, this.verbose))
-        newSelectCount++
-      }
-    }
-
-    this.selectionCount = this.selectionManager.getSelectedCount()
-
-    if (newSelectCount > 0) {
-      this.showToast(`Selected ${newSelectCount} element(s)`)
-    }
-
     this.emitSelectionChanged()
   }
 

@@ -444,6 +444,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
           xpath: XPathUtils.generateXPath(targetElement),
           cssSelector: XPathUtils.generateEnhancedCSSSelector(targetElement),
           textContent: element.textContent?.substring(0, 100) || '',
+          selectedText: data.textSelection?.selectedText,
           attributes: Array.from(targetElement.attributes).reduce((acc, attr) => {
             if (attr.name !== 'style') {
               acc[attr.name] = attr.value
@@ -451,23 +452,6 @@ export function createElementSelectionManager(): ElementSelectionManager {
             return acc
           }, {} as Record<string, string>),
           children: [],
-        }
-
-        // Add text selection metadata if present and container is still in DOM
-        if (data.textSelection && data.textSelection.containerElement.isConnected) {
-          elementInfo.textSelection = {
-            selectedText: data.textSelection.selectedText,
-            containerXPath: XPathUtils.generateXPath(data.textSelection.containerElement),
-            containerCssSelector: XPathUtils.generateEnhancedCSSSelector(data.textSelection.containerElement)
-          }
-        } else if (data.textSelection) {
-          // Container was removed from DOM (e.g., by framework re-render)
-          // Still include text but mark container as unavailable
-          elementInfo.textSelection = {
-            selectedText: data.textSelection.selectedText,
-            containerXPath: '',
-            containerCssSelector: ''
-          }
         }
 
         // Add image path if available
