@@ -350,6 +350,7 @@ export class AnnotatorToolbar extends LitElement {
     this.inspectionManager = createInspectionManager({
       onElementSelect: (element) => this.handleElementSelected(element),
       onMultiSelect: (elements) => this.handleMultiSelect(elements),
+      onTextSelect: (range, commonAncestor) => this.handleTextSelected(range, commonAncestor),
       shouldIgnoreElement: (element) => this.shouldIgnoreElement(element),
       isElementSelected: (element) => this.selectionManager?.hasElement(element) || false,
       onEscape: () => this.exitInspectingMode(),
@@ -712,6 +713,31 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     this.emitSelectionChanged()
+  }
+
+  private handleTextSelected(range: Range, commonAncestor: Element) {
+    if (!this.selectionManager) return
+
+    try {
+      const wrappedElement = this.selectionManager.selectTextRange(
+        range,
+        commonAncestor,
+        (el) => findNearestComponent(el, this.verbose)
+      )
+
+      if (wrappedElement) {
+        this.showCommentPopoverForElement(wrappedElement)
+        this.selectionCount = this.selectionManager.getSelectedCount()
+        this.emitSelectionChanged()
+      } else {
+        // selectTextRange returns null for cross-element selections or exceeding max length
+        this.showToast('Select text within one element')
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      this.log('Text selection error:', message)
+      this.showToast('Selection error')
+    }
   }
 
   private removeSelectedElement() {

@@ -22,6 +22,11 @@ export interface ElementData {
   attributes: Record<string, string>
   imagePath?: string
   comment?: string
+  textSelection?: {
+    selectedText: string
+    containerXPath: string
+    containerCssSelector: string
+  }
   computedStyles?: {
     width: number
     height: number

@@ -6,12 +6,24 @@ import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/d
 import type { ElementData } from '../rpc/define'
 import type { ComponentInfo } from './detectors'
 import { XPathUtils } from '../utils/xpath'
-import { Z_INDEX } from './constants'
+import { Z_INDEX, SELECTION_COLORS, TEXT_SELECTION } from './constants'
+
+/**
+ * Metadata for a text selection annotation.
+ * Created when user selects text (not an element) for annotation.
+ */
+export interface TextSelectionInfo {
+  /** The actual text content that was selected by the user */
+  selectedText: string
+  /** The nearest common ancestor element containing the entire selection */
+  containerElement: Element
+}
 
 export interface SelectedElementInfo {
   color: string
   index: number
   displayText: string // Store for reindexing
+  textSelection?: TextSelectionInfo // Present if this is a text selection
 }
 
 // Selection group - all UI elements for one selected element share ONE position tracker
@@ -25,7 +37,8 @@ interface SelectionGroup {
 type ComponentFinder = (el: Element) => ComponentInfo | null
 
 export interface ElementSelectionManager {
-  selectElement(element: Element, componentFinder?: ComponentFinder): void
+  selectElement(element: Element, componentFinder?: ComponentFinder, textSelection?: TextSelectionInfo): void
+  selectTextRange(range: Range, containerElement: Element, componentFinder?: ComponentFinder): Element | null
   deselectElement(element: Element): void
   clearAllSelections(): void
   hasElement(element: Element): boolean
@@ -45,10 +58,30 @@ export function createElementSelectionManager(): ElementSelectionManager {
   let onEditClickCallback: ((element: Element) => void) | null = null
   let keyframesStyleElement: HTMLStyleElement | null = null
 
-  // Cyberpunk color palette (uses modulo for cycling)
-  const colors = ['#FF00FF', '#00FFFF', '#FFFF00'] // cyber-pink, cyber-cyan, cyber-yellow
+  /**
+   * Unwraps a text selection span, restoring children to their original position.
+   * Safely handles the case where the element was already removed from the DOM.
+   */
+  function unwrapTextSelection(element: Element): void {
+    const parent = element.parentNode
+    if (!parent) {
+      // Element was already removed from DOM (e.g., by framework re-render)
+      console.warn('[AI Annotator] Cannot unwrap text selection: element has no parent')
+      return
+    }
 
-  function getDisplayText(index: number, element: Element, componentFinder?: ComponentFinder): string {
+    while (element.firstChild) {
+      parent.insertBefore(element.firstChild, element)
+    }
+    element.remove()
+  }
+
+  function getDisplayText(index: number, element: Element, componentFinder?: ComponentFinder, textSelection?: TextSelectionInfo): string {
+    if (textSelection) {
+      const preview = textSelection.selectedText.substring(0, 15)
+      const ellipsis = textSelection.selectedText.length > 15 ? '...' : ''
+      return `#${index} "${preview}${ellipsis}"`
+    }
     const component = componentFinder?.(element)
     if (component && component.componentLocation) {
       const componentPath = component.componentLocation.split('@')[0]
@@ -255,19 +288,68 @@ export function createElementSelectionManager(): ElementSelectionManager {
   }
 
   return {
-    selectElement(element: Element, componentFinder?: ComponentFinder): void {
-      const color = colors[colorIndex % colors.length]
+    selectElement(element: Element, componentFinder?: ComponentFinder, textSelection?: TextSelectionInfo): void {
+      const color = SELECTION_COLORS[colorIndex % SELECTION_COLORS.length]
       const index = selectedElements.size + 1
       colorIndex++
 
       // Get display text for badge (preserves component info for reindexing)
-      const displayText = getDisplayText(index, element, componentFinder)
+      const displayText = getDisplayText(index, element, componentFinder, textSelection)
 
       // Create selection group with ONE autoUpdate for both badge and overlay
       const group = createSelectionGroup(element, color, displayText)
       selectionGroups.set(element, group)
 
-      selectedElements.set(element, { color, index, displayText })
+      selectedElements.set(element, { color, index, displayText, textSelection })
+    },
+
+    selectTextRange(range: Range, containerElement: Element, componentFinder?: ComponentFinder): Element | null {
+      const selectedText = range.toString().trim()
+      if (!selectedText) return null
+
+      // Enforce maximum text selection length
+      if (selectedText.length > TEXT_SELECTION.MAX_LENGTH) {
+        console.warn(`[AI Annotator] Text selection exceeds maximum length of ${TEXT_SELECTION.MAX_LENGTH} characters`)
+        return null
+      }
+
+      // Get the next color in the palette for this text selection
+      const highlightColor = SELECTION_COLORS[colorIndex % SELECTION_COLORS.length]
+
+      // Create wrapper span around selected text
+      const wrapper = document.createElement('span')
+      wrapper.className = 'annotator-text-selection annotator-ignore'
+      wrapper.style.cssText = `
+        background: ${highlightColor}4D;
+        border-radius: 2px;
+      `
+
+      try {
+        // surroundContents works when selection is within a single element's text
+        // Throws DOMException if range partially selects non-text nodes
+        range.surroundContents(wrapper)
+      } catch (error) {
+        // Cross-element selection: surroundContents fails when selection spans multiple elements
+        // Clean up the wrapper since it wasn't inserted, then return null with helpful message
+        console.warn('[AI Annotator] Cannot wrap cross-element text selection. Please select text within a single paragraph.')
+        return null
+      }
+
+      // Create text selection info
+      const textSelection: TextSelectionInfo = {
+        selectedText,
+        containerElement
+      }
+
+      try {
+        // Select the wrapper as a regular element with text selection metadata
+        this.selectElement(wrapper, componentFinder, textSelection)
+        return wrapper
+      } catch (error) {
+        // If selectElement fails, clean up the orphaned wrapper to avoid memory leak
+        unwrapTextSelection(wrapper)
+        throw error
+      }
     },
 
     deselectElement(element: Element): void {
@@ -281,17 +363,28 @@ export function createElementSelectionManager(): ElementSelectionManager {
           selectionGroups.delete(element)
         }
 
+        // If this was a text selection, unwrap the span
+        if (elementData.textSelection && element.classList.contains('annotator-text-selection')) {
+          unwrapTextSelection(element)
+        }
+
         selectedElements.delete(element)
         reindexElements()
       }
     },
 
     clearAllSelections(): void {
-      // Remove all selection groups
-      selectionGroups.forEach(group => {
+      // Remove all selection groups and unwrap text selections
+      selectionGroups.forEach((group, element) => {
         group.cleanup()
         group.badge.remove()
         group.overlay.remove()
+
+        // If this was a text selection, unwrap the span
+        const elementData = selectedElements.get(element)
+        if (elementData?.textSelection && element.classList.contains('annotator-text-selection')) {
+          unwrapTextSelection(element)
+        }
       })
       selectionGroups.clear()
 
@@ -345,19 +438,39 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
         const componentData = componentFinder?.(element)
 
+        // For text selections, use the container element for xpath/cssSelector
+        const targetElement = data.textSelection?.containerElement || element
+
         const elementInfo: ElementData = {
           index: data.index,
-          tagName: element.tagName,
-          xpath: XPathUtils.generateXPath(element),
-          cssSelector: XPathUtils.generateEnhancedCSSSelector(element),
+          tagName: targetElement.tagName,
+          xpath: XPathUtils.generateXPath(targetElement),
+          cssSelector: XPathUtils.generateEnhancedCSSSelector(targetElement),
           textContent: element.textContent?.substring(0, 100) || '',
-          attributes: Array.from(element.attributes).reduce((acc, attr) => {
+          attributes: Array.from(targetElement.attributes).reduce((acc, attr) => {
             if (attr.name !== 'style') {
               acc[attr.name] = attr.value
             }
             return acc
           }, {} as Record<string, string>),
           children: [],
+        }
+
+        // Add text selection metadata if present and container is still in DOM
+        if (data.textSelection && data.textSelection.containerElement.isConnected) {
+          elementInfo.textSelection = {
+            selectedText: data.textSelection.selectedText,
+            containerXPath: XPathUtils.generateXPath(data.textSelection.containerElement),
+            containerCssSelector: XPathUtils.generateEnhancedCSSSelector(data.textSelection.containerElement)
+          }
+        } else if (data.textSelection) {
+          // Container was removed from DOM (e.g., by framework re-render)
+          // Still include text but mark container as unavailable
+          elementInfo.textSelection = {
+            selectedText: data.textSelection.selectedText,
+            containerXPath: '',
+            containerCssSelector: ''
+          }
         }
 
         // Add image path if available
@@ -367,7 +480,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
         // Add computed styles
         try {
-          const htmlElement = element as HTMLElement
+          const htmlElement = targetElement as HTMLElement
           const computedStyle = window.getComputedStyle(htmlElement)
           elementInfo.computedStyles = {
             width: htmlElement.offsetWidth,

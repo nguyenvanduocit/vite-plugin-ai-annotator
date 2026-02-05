@@ -15,6 +15,7 @@ export interface InspectionManager {
 export interface InspectionCallbacks {
   onElementSelect?: (element: Element) => void
   onMultiSelect?: (elements: Element[]) => void
+  onTextSelect?: (range: Range, commonAncestor: Element) => void
   shouldIgnoreElement?: (element: Element) => boolean
   isElementSelected?: (element: Element) => boolean
   onEscape?: () => void
@@ -33,7 +34,7 @@ const DRAG_THRESHOLD = 5 // Minimum pixels to consider it a drag vs click
 const INITIAL_DRAG_STATE: DragState = { isDragging: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
 
 export function createInspectionManager(callbacks: InspectionCallbacks = {}): InspectionManager {
-  const { onElementSelect, onMultiSelect, shouldIgnoreElement, isElementSelected, onEscape, onCopy } = callbacks
+  const { onElementSelect, onMultiSelect, onTextSelect, shouldIgnoreElement, isElementSelected, onEscape, onCopy } = callbacks
   let isInspecting = false
   let currentHoveredElement: Element | null = null
   let hoverOverlay: HTMLDivElement | null = null
@@ -46,15 +47,13 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   function addInspectionStyles(): void {
     inspectionStyleElement = document.createElement('style')
     inspectionStyleElement.id = 'annotator-toolbar-styles'
-    // Disable pointer-events and text selection on all elements
+    // Disable pointer-events on all elements (but allow text selection for annotation)
     // Then use elementFromPoint to track what's under the cursor
     // Exclude: annotator-toolbar, annotator-badge (selection badges), annotator-ignore
     inspectionStyleElement.textContent = `
       * {
         pointer-events: none !important;
         cursor: crosshair !important;
-        user-select: none !important;
-        -webkit-user-select: none !important;
       }
       annotator-toolbar, annotator-toolbar *,
       .annotator-badge, .annotator-badge *,
@@ -299,34 +298,75 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     currentHoveredElement = target
   }
 
+  /**
+   * Detects if user made a text selection and extracts the range and ancestor.
+   * Returns null if no valid text selection exists.
+   */
+  function detectTextSelection(): { range: Range; commonAncestor: Element } | null {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
+
+    const selectedText = selection.toString().trim()
+    if (selectedText.length === 0) return null
+
+    const range = selection.getRangeAt(0)
+
+    // Find common ancestor element (Range.commonAncestorContainer can be a text node)
+    const ancestor = range.commonAncestorContainer
+    const commonAncestor = ancestor.nodeType === Node.ELEMENT_NODE
+      ? ancestor as Element
+      : ancestor.parentElement
+
+    if (!commonAncestor || shouldIgnoreElement?.(commonAncestor)) return null
+
+    return { range, commonAncestor }
+  }
+
   function handleMouseUp(e: MouseEvent): void {
     const wasDragging = dragState.isDragging
 
-    if (wasDragging) {
-      // Complete drag selection
-      removeSelectionOverlay()
+    try {
+      if (wasDragging) {
+        // Complete drag selection
+        removeSelectionOverlay()
 
-      const selectionRect = getSelectionRect()
-      // Only process if selection has some size
-      if (selectionRect.width > 10 && selectionRect.height > 10) {
-        const elementsInRect = findElementsFullyInRect(selectionRect)
-        const leafElements = filterLeafElements(elementsInRect)
+        const selectionRect = getSelectionRect()
+        // Only process if selection has some size
+        if (selectionRect.width > 10 && selectionRect.height > 10) {
+          const elementsInRect = findElementsFullyInRect(selectionRect)
+          const leafElements = filterLeafElements(elementsInRect)
 
-        if (leafElements.length > 0) {
-          onMultiSelect?.(leafElements)
+          if (leafElements.length > 0) {
+            onMultiSelect?.(leafElements)
+          }
+        }
+      } else if (mouseDownTime > 0) {
+        // Check for text selection first (user dragged to select text)
+        const textSelection = detectTextSelection()
+
+        if (textSelection) {
+          // Clone range before clearing selection (Range becomes invalid after removeAllRanges)
+          const range = textSelection.range.cloneRange()
+          const commonAncestor = textSelection.commonAncestor
+
+          // Clear browser selection BEFORE callback to avoid race conditions
+          window.getSelection()?.removeAllRanges()
+
+          onTextSelect?.(range, commonAncestor)
+          return
+        }
+
+        // Was not dragging and no text selection → single click selection
+        const target = getElementAtPoint(e.clientX, e.clientY)
+        if (target && !shouldIgnoreElement?.(target)) {
+          onElementSelect?.(target)
         }
       }
-    } else if (mouseDownTime > 0) {
-      // Was not dragging → single click selection
-      const target = getElementAtPoint(e.clientX, e.clientY)
-      if (target && !shouldIgnoreElement?.(target)) {
-        onElementSelect?.(target)
-      }
+    } finally {
+      // Always reset drag state, even if callback throws
+      mouseDownTime = 0
+      dragState = { ...INITIAL_DRAG_STATE }
     }
-
-    // Reset drag state
-    mouseDownTime = 0
-    dragState = { ...INITIAL_DRAG_STATE }
   }
 
   function preventClick(e: MouseEvent): void {
@@ -393,6 +433,9 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     removeHoverHighlight()
     resetDragState()
+
+    // Clear any browser text selection when exiting inspection mode
+    window.getSelection()?.removeAllRanges()
   }
 
   function cleanupKeyframesStyle(): void {

@@ -19,3 +19,12 @@ export const CONSOLE_LIMITS = {
 
 // Screenshot settings
 export const SCREENSHOT_TIMEOUT_MS = 10000 // 10 seconds
+
+// Cyberpunk color palette for selections
+export const SELECTION_COLORS = ['#FF00FF', '#00FFFF', '#FFFF00'] as const // cyber-pink, cyber-cyan, cyber-yellow
+
+// Text selection settings
+export const TEXT_SELECTION = {
+  MAX_LENGTH: 10000,           // Maximum characters allowed in a text selection
+  HIGHLIGHT_OPACITY: 0.3,      // Background opacity for text highlight
+} as const
