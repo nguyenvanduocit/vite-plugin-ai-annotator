@@ -1,6 +1,7 @@
 /**
  * Inspection Manager for mouse inspection mode handling
  * Supports both single-click selection and drag-to-select multiple elements
+ * Also supports text selection for annotating specific text content
  */
 
 import { Z_INDEX, COLORS } from './constants'
@@ -39,44 +40,38 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   let currentHoveredElement: Element | null = null
   let hoverOverlay: HTMLDivElement | null = null
   let hoverKeyframesStyleElement: HTMLStyleElement | null = null
+  let inspectionStyleElement: HTMLStyleElement | null = null
   let selectionOverlay: HTMLDivElement | null = null
-  let glassPane: HTMLDivElement | null = null
   let dragState: DragState = { ...INITIAL_DRAG_STATE }
   let mouseDownTime = 0
 
-  function createGlassPane(): HTMLDivElement {
-    const pane = document.createElement('div')
-    pane.id = 'annotator-glass-pane'
-    pane.className = 'annotator-ignore'
-    pane.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: transparent;
-      cursor: crosshair;
-      z-index: ${Z_INDEX.INSPECTION_OVERLAY};
-      pointer-events: auto;
+  function addInspectionStyles(): void {
+    inspectionStyleElement = document.createElement('style')
+    inspectionStyleElement.id = 'annotator-inspection-styles'
+    // Only change cursor, allow native text selection
+    inspectionStyleElement.textContent = `
+      body.annotator-inspecting * {
+        cursor: crosshair !important;
+      }
+      body.annotator-inspecting *::selection {
+        background: ${COLORS.INSPECTION}40 !important;
+      }
+      annotator-toolbar, annotator-toolbar *,
+      .annotator-badge, .annotator-badge *,
+      .annotator-ignore, .annotator-ignore * {
+        cursor: default !important;
+      }
     `
-
-    // Attach listeners to glass pane instead of document
-    pane.addEventListener('mousedown', handleMouseDown, true)
-    pane.addEventListener('mousemove', handleMouseMove, true)
-    pane.addEventListener('mouseup', handleMouseUp, true)
-    pane.addEventListener('click', preventClick, true)
-    pane.addEventListener('dblclick', preventMouseEvents, true)
-    pane.addEventListener('contextmenu', preventMouseEvents, true)
-
-    document.body.appendChild(pane)
-    return pane
+    document.head.appendChild(inspectionStyleElement)
+    document.body.classList.add('annotator-inspecting')
   }
 
-  function removeGlassPane(): void {
-    if (glassPane) {
-      glassPane.remove()
-      glassPane = null
+  function removeInspectionStyles(): void {
+    if (inspectionStyleElement) {
+      inspectionStyleElement.remove()
+      inspectionStyleElement = null
     }
+    document.body.classList.remove('annotator-inspecting')
   }
 
   function removeHoverHighlight(): void {
@@ -88,7 +83,6 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function createHoverOverlay(element: Element): HTMLDivElement {
-    // Add keyframes animation if not already added (track for cleanup)
     if (!hoverKeyframesStyleElement) {
       hoverKeyframesStyleElement = document.createElement('style')
       hoverKeyframesStyleElement.id = 'annotator-hover-keyframes'
@@ -103,7 +97,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     const color = COLORS.INSPECTION
     const overlay = document.createElement('div')
-    overlay.className = 'annotator-hover-overlay'
+    overlay.className = 'annotator-hover-overlay annotator-ignore'
     const rect = element.getBoundingClientRect()
 
     overlay.style.cssText = `
@@ -134,20 +128,6 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     hoverOverlay.style.top = `${rect.top}px`
     hoverOverlay.style.width = `${rect.width}px`
     hoverOverlay.style.height = `${rect.height}px`
-  }
-
-  function getElementAtPoint(x: number, y: number): Element | null {
-    if (!glassPane) return null
-
-    // Temporarily hide glass pane to click through
-    const originalPointerEvents = glassPane.style.pointerEvents
-    glassPane.style.pointerEvents = 'none'
-
-    try {
-      return document.elementFromPoint(x, y)
-    } finally {
-      glassPane.style.pointerEvents = originalPointerEvents
-    }
   }
 
   function createSelectionOverlay(): HTMLDivElement {
@@ -204,53 +184,39 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function findElementsFullyInRect(rect: DOMRect): Element[] {
-    // Hide glass pane to ensure accurate measurements if needed
-    if (glassPane) glassPane.style.display = 'none'
+    const elements: Element[] = []
 
-    try {
-      const elements: Element[] = []
+    function traverse(node: Element) {
+      if (shouldIgnoreElement?.(node)) return
+      if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') return
 
-      // Recursive traversal is more efficient than querySelectorAll('*') for filtering
-      function traverse(node: Element) {
-        if (shouldIgnoreElement?.(node)) return
-        if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') return
+      const elementRect = node.getBoundingClientRect()
 
-        const elementRect = node.getBoundingClientRect()
-
-        // Optimization: Skip branch if element is completely outside rect AND not containing the rect
-        // (For simplicity, we traverse all but could optimize spatial pruning here)
-
-        if (elementRect.width > 0 && elementRect.height > 0) {
-          if (isFullyContained(elementRect, rect)) {
-            elements.push(node)
-          }
-        }
-
-        const children = node.children
-        for (let i = 0; i < children.length; i++) {
-          traverse(children[i])
+      if (elementRect.width > 0 && elementRect.height > 0) {
+        if (isFullyContained(elementRect, rect)) {
+          elements.push(node)
         }
       }
 
-      traverse(document.body)
-      return elements
-    } finally {
-      if (glassPane) glassPane.style.display = 'block'
+      const children = node.children
+      for (let i = 0; i < children.length; i++) {
+        traverse(children[i])
+      }
     }
+
+    traverse(document.body)
+    return elements
   }
 
   function filterLeafElements(elements: Element[]): Element[] {
-    // Remove parents if their children are also selected (keep only leaves)
     return elements.filter(el => {
       return !elements.some(other => other !== el && el.contains(other))
     })
   }
 
   function handleMouseDown(e: MouseEvent): void {
-    // Glass pane intercepts, so no need to check target usually,
-    // but good to respect ignore rules if event bubbles from toolbar
     const clickedElement = e.target as Element
-    if (shouldIgnoreElement?.(clickedElement) && clickedElement !== glassPane) return
+    if (shouldIgnoreElement?.(clickedElement)) return
 
     mouseDownTime = Date.now()
     dragState = {
@@ -260,58 +226,61 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       currentX: e.clientX,
       currentY: e.clientY
     }
+    // Don't preventDefault - allow native text selection to work
   }
 
   function handleMouseMove(e: MouseEvent): void {
-    // Check if we're in a potential drag state
-    if (mouseDownTime > 0) {
+    // Check if we're in a potential drag state for rectangle selection
+    // Only show rectangle overlay if there's no text being selected
+    if (mouseDownTime > 0 && !dragState.isDragging) {
       const dx = Math.abs(e.clientX - dragState.startX)
       const dy = Math.abs(e.clientY - dragState.startY)
 
-      // Start dragging if moved past threshold
-      if (!dragState.isDragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
-        dragState.isDragging = true
-        removeHoverHighlight()
-        selectionOverlay = createSelectionOverlay()
-      }
+      // Start rectangle drag if moved past threshold AND no text selection in progress
+      if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+        const selection = window.getSelection()
+        const hasTextSelection = selection && !selection.isCollapsed && selection.toString().trim().length > 0
 
-      if (dragState.isDragging) {
-        dragState.currentX = e.clientX
-        dragState.currentY = e.clientY
-        updateSelectionOverlay()
-        return
+        // If user is selecting text, don't start rectangle selection
+        if (!hasTextSelection) {
+          dragState.isDragging = true
+          removeHoverHighlight()
+          selectionOverlay = createSelectionOverlay()
+        }
       }
     }
 
+    if (dragState.isDragging) {
+      dragState.currentX = e.clientX
+      dragState.currentY = e.clientY
+      updateSelectionOverlay()
+      return
+    }
+
     // Normal hover behavior when not dragging
-    const target = getElementAtPoint(e.clientX, e.clientY)
+    const target = document.elementFromPoint(e.clientX, e.clientY)
     if (!target || shouldIgnoreElement?.(target)) {
       removeHoverHighlight()
       return
     }
 
-    // Skip if already selected
     if (isElementSelected?.(target)) {
       removeHoverHighlight()
       return
     }
 
     if (target === currentHoveredElement) {
-      // Update position in case element moved
       updateHoverOverlay(target)
       return
     }
 
     removeHoverHighlight()
-
-    // Use overlay instead of outline (z-index issue)
     hoverOverlay = createHoverOverlay(target)
     currentHoveredElement = target
   }
 
   /**
    * Detects if user made a text selection and extracts the range and ancestor.
-   * Returns null if no valid text selection exists.
    */
   function detectTextSelection(): { range: Range; commonAncestor: Element } | null {
     const selection = window.getSelection()
@@ -322,7 +291,6 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     const range = selection.getRangeAt(0)
 
-    // Find common ancestor element (Range.commonAncestorContainer can be a text node)
     const ancestor = range.commonAncestorContainer
     const commonAncestor = ancestor.nodeType === Node.ELEMENT_NODE
       ? ancestor as Element
@@ -337,12 +305,22 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     const wasDragging = dragState.isDragging
 
     try {
+      // Priority 1: Check for text selection (user dragged to select text)
+      const textSelection = detectTextSelection()
+      if (textSelection) {
+        const range = textSelection.range.cloneRange()
+        const commonAncestor = textSelection.commonAncestor
+
+        window.getSelection()?.removeAllRanges()
+        onTextSelect?.(range, commonAncestor)
+        return
+      }
+
+      // Priority 2: Rectangle drag selection
       if (wasDragging) {
-        // Complete drag selection
         removeSelectionOverlay()
 
         const selectionRect = getSelectionRect()
-        // Only process if selection has some size
         if (selectionRect.width > 10 && selectionRect.height > 10) {
           const elementsInRect = findElementsFullyInRect(selectionRect)
           const leafElements = filterLeafElements(elementsInRect)
@@ -351,59 +329,45 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
             onMultiSelect?.(leafElements)
           }
         }
-      } else if (mouseDownTime > 0) {
-        // Check for text selection first (user dragged to select text)
-        const textSelection = detectTextSelection()
+        return
+      }
 
-        if (textSelection) {
-          // Clone range before clearing selection (Range becomes invalid after removeAllRanges)
-          const range = textSelection.range.cloneRange()
-          const commonAncestor = textSelection.commonAncestor
-
-          // Clear browser selection BEFORE callback to avoid race conditions
-          window.getSelection()?.removeAllRanges()
-
-          onTextSelect?.(range, commonAncestor)
-          return
-        }
-
-        // Was not dragging and no text selection → single click selection
-        const target = getElementAtPoint(e.clientX, e.clientY)
+      // Priority 3: Single click = element selection
+      if (mouseDownTime > 0) {
+        const target = document.elementFromPoint(e.clientX, e.clientY)
         if (target && !shouldIgnoreElement?.(target)) {
           onElementSelect?.(target)
         }
       }
     } finally {
-      // Always reset drag state, even if callback throws
       mouseDownTime = 0
       dragState = { ...INITIAL_DRAG_STATE }
     }
   }
 
-  function preventClick(e: MouseEvent): void {
-    // Glass pane intercepts all clicks
+  function handleClick(e: MouseEvent): void {
+    const target = e.target as Element
+    if (shouldIgnoreElement?.(target)) return
+
+    // Prevent default click behavior (navigation, form submit, etc)
     e.preventDefault()
-    e.stopPropagation()
-    e.stopImmediatePropagation()
   }
 
   function preventMouseEvents(e: Event): void {
-    // Glass pane intercepts all mouse events
+    const target = e.target as Element
+    if (shouldIgnoreElement?.(target)) return
+
     e.preventDefault()
     e.stopPropagation()
-    e.stopImmediatePropagation()
   }
 
-  // Industry standard: Only handle specific shortcuts, don't block all keyboard events
   function handleKeyDown(e: KeyboardEvent): void {
-    // Escape to exit inspecting mode
     if (e.key === 'Escape') {
       e.preventDefault()
       onEscape?.()
       return
     }
 
-    // Cmd/Ctrl+C to copy selected elements (only when no text is selected)
     if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
       const selection = window.getSelection()
       if (!selection || selection.isCollapsed) {
@@ -420,13 +384,18 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function cleanup(): void {
-    removeGlassPane()
+    removeInspectionStyles()
+
+    document.removeEventListener('mousedown', handleMouseDown, true)
+    document.removeEventListener('mousemove', handleMouseMove, true)
+    document.removeEventListener('mouseup', handleMouseUp, true)
+    document.removeEventListener('click', handleClick, true)
+    document.removeEventListener('dblclick', preventMouseEvents, true)
+    document.removeEventListener('contextmenu', preventMouseEvents, true)
     document.removeEventListener('keydown', handleKeyDown)
 
     removeHoverHighlight()
     resetDragState()
-
-    // Clear any browser text selection when exiting inspection mode
     window.getSelection()?.removeAllRanges()
   }
 
@@ -442,9 +411,14 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       if (isInspecting) return
 
       isInspecting = true
-      glassPane = createGlassPane()
+      addInspectionStyles()
 
-      // Keyboard: attach to document as it bubbles up
+      document.addEventListener('mousedown', handleMouseDown, true)
+      document.addEventListener('mousemove', handleMouseMove, true)
+      document.addEventListener('mouseup', handleMouseUp, true)
+      document.addEventListener('click', handleClick, true)
+      document.addEventListener('dblclick', preventMouseEvents, true)
+      document.addEventListener('contextmenu', preventMouseEvents, true)
       document.addEventListener('keydown', handleKeyDown)
     },
 
