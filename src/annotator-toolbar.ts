@@ -719,20 +719,26 @@ export class AnnotatorToolbar extends LitElement {
     if (!this.selectionManager) return
 
     try {
-      const wrappedElement = this.selectionManager.selectTextRange(
-        range,
-        commonAncestor,
-        (el) => findNearestComponent(el, this.verbose)
+      // Step 1: Wrap text in a span
+      const result = this.selectionManager.wrapTextRange(range, commonAncestor)
+
+      if (!result) {
+        // wrapTextRange returns null for cross-element selections or exceeding max length
+        this.showToast('Select text within one element')
+        return
+      }
+
+      // Step 2: Select the wrapper element (creates badge, overlay, etc.)
+      this.selectionManager.selectElement(
+        result.wrapper,
+        (el: Element) => findNearestComponent(el, this.verbose),
+        result.textSelection
       )
 
-      if (wrappedElement) {
-        this.showCommentPopoverForElement(wrappedElement)
-        this.selectionCount = this.selectionManager.getSelectedCount()
-        this.emitSelectionChanged()
-      } else {
-        // selectTextRange returns null for cross-element selections or exceeding max length
-        this.showToast('Select text within one element')
-      }
+      // Step 3: Show popover and update UI
+      this.showCommentPopoverForElement(result.wrapper)
+      this.selectionCount = this.selectionManager.getSelectedCount()
+      this.emitSelectionChanged()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       this.log('Text selection error:', message)

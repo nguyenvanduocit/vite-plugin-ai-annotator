@@ -36,9 +36,14 @@ interface SelectionGroup {
 // Component finder function type
 type ComponentFinder = (el: Element) => ComponentInfo | null
 
+export interface WrapTextRangeResult {
+  wrapper: Element
+  textSelection: TextSelectionInfo
+}
+
 export interface ElementSelectionManager {
   selectElement(element: Element, componentFinder?: ComponentFinder, textSelection?: TextSelectionInfo): void
-  selectTextRange(range: Range, containerElement: Element, componentFinder?: ComponentFinder): Element | null
+  wrapTextRange(range: Range, containerElement: Element): WrapTextRangeResult | null
   deselectElement(element: Element): void
   clearAllSelections(): void
   hasElement(element: Element): boolean
@@ -303,7 +308,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
       selectedElements.set(element, { color, index, displayText, textSelection })
     },
 
-    selectTextRange(range: Range, containerElement: Element, componentFinder?: ComponentFinder): Element | null {
+    wrapTextRange(range: Range, containerElement: Element): WrapTextRangeResult | null {
       const selectedText = range.toString().trim()
       if (!selectedText) return null
 
@@ -313,7 +318,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
         return null
       }
 
-      // Get the next color in the palette for this text selection
+      // Get the next color in the palette for this text selection (peek, don't increment)
       const highlightColor = SELECTION_COLORS[colorIndex % SELECTION_COLORS.length]
 
       // Create wrapper span around selected text
@@ -330,25 +335,17 @@ export function createElementSelectionManager(): ElementSelectionManager {
         range.surroundContents(wrapper)
       } catch (error) {
         // Cross-element selection: surroundContents fails when selection spans multiple elements
-        // Clean up the wrapper since it wasn't inserted, then return null with helpful message
         console.warn('[AI Annotator] Cannot wrap cross-element text selection. Please select text within a single paragraph.')
         return null
       }
 
-      // Create text selection info
-      const textSelection: TextSelectionInfo = {
-        selectedText,
-        containerElement
-      }
-
-      try {
-        // Select the wrapper as a regular element with text selection metadata
-        this.selectElement(wrapper, componentFinder, textSelection)
-        return wrapper
-      } catch (error) {
-        // If selectElement fails, clean up the orphaned wrapper to avoid memory leak
-        unwrapTextSelection(wrapper)
-        throw error
+      // Return wrapper and text selection info - caller will call selectElement
+      return {
+        wrapper,
+        textSelection: {
+          selectedText,
+          containerElement
+        }
       }
     },
 
