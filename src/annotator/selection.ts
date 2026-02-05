@@ -6,7 +6,7 @@ import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/d
 import type { ElementData } from '../rpc/define'
 import type { ComponentInfo } from './detectors'
 import { XPathUtils } from '../utils/xpath'
-import { Z_INDEX, SELECTION_COLORS, TEXT_SELECTION } from './constants'
+import { Z_INDEX, SELECTION_COLORS, TEXT_SELECTION, COLORS, FONTS } from './constants'
 
 /**
  * Metadata for a text selection annotation.
@@ -112,7 +112,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
 
   // Create all UI elements for a selected element with ONE shared position tracker
   function createSelectionGroup(element: Element, color: string, displayText: string): SelectionGroup {
-    const textColor = '#050505'
+    const textColor = COLORS.BADGE_TEXT
     const glowColor = color.toLowerCase()
 
     // --- Create Badge ---
@@ -122,7 +122,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
     const shadow = badge.attachShadow({ mode: 'open' })
     const style = document.createElement('style')
     style.textContent = `
-      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+      @import url('${FONTS.GOOGLE_FONTS_URL}');
 
       @keyframes badge-glow {
         0%, 100% { box-shadow: 2px 2px 0px ${color}44, 0 0 8px ${glowColor}80; }
@@ -133,7 +133,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
         display: flex;
         align-items: center;
         border: 1px solid ${color};
-        background: #050505;
+        background: ${COLORS.BADGE_BG};
         box-shadow: 1px 1px 0px ${color}44, 0 0 6px ${glowColor}60;
         animation: badge-glow 2s ease-in-out infinite;
         cursor: pointer;
@@ -152,7 +152,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
         justify-content: center;
         font-size: 9px;
         font-weight: 700;
-        font-family: 'JetBrains Mono', monospace;
+        font-family: ${FONTS.MONO};
         white-space: nowrap;
         text-transform: uppercase;
       }

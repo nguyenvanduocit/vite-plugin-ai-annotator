@@ -485,27 +485,26 @@ export class AnnotatorToolbar extends LitElement {
       (el) => findNearestComponent(el, this.verbose)
     )
 
-    // Add comments to elements
-    const addComments = (items: ElementData[], selectedElements: Map<Element, SelectedElementInfo>) => {
-      for (const item of items) {
-        // Find element by index
-        for (const [element, info] of selectedElements) {
-          if (info.index === item.index) {
-            const comment = this.elementComments.get(element)
-            if (comment) {
-              item.comment = comment
-            }
-            break
+    this.enrichElementsWithComments(elements, this.selectionManager.getSelectedElements())
+    return elements
+  }
+
+  private enrichElementsWithComments(items: ElementData[], selectedElements: Map<Element, SelectedElementInfo>) {
+    for (const item of items) {
+      // Find element by index
+      for (const [element, info] of selectedElements) {
+        if (info.index === item.index) {
+          const comment = this.elementComments.get(element)
+          if (comment) {
+            item.comment = comment
           }
-        }
-        if (item.children.length > 0) {
-          addComments(item.children, selectedElements)
+          break
         }
       }
+      if (item.children.length > 0) {
+        this.enrichElementsWithComments(item.children, selectedElements)
+      }
     }
-
-    addComments(elements, this.selectionManager.getSelectedElements())
-    return elements
   }
 
   private triggerSelection(

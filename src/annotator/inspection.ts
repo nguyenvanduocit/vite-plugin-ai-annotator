@@ -3,7 +3,7 @@
  * Supports both single-click selection and drag-to-select multiple elements
  */
 
-import { Z_INDEX } from './constants'
+import { Z_INDEX, COLORS } from './constants'
 
 export interface InspectionManager {
   enterInspectionMode(): void
@@ -39,36 +39,43 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   let currentHoveredElement: Element | null = null
   let hoverOverlay: HTMLDivElement | null = null
   let hoverKeyframesStyleElement: HTMLStyleElement | null = null
-  let inspectionStyleElement: HTMLStyleElement | null = null
   let selectionOverlay: HTMLDivElement | null = null
+  let glassPane: HTMLDivElement | null = null
   let dragState: DragState = { ...INITIAL_DRAG_STATE }
   let mouseDownTime = 0
 
-  function addInspectionStyles(): void {
-    inspectionStyleElement = document.createElement('style')
-    inspectionStyleElement.id = 'annotator-toolbar-styles'
-    // Disable pointer-events on all elements (but allow text selection for annotation)
-    // Then use elementFromPoint to track what's under the cursor
-    // Exclude: annotator-toolbar, annotator-badge (selection badges), annotator-ignore
-    inspectionStyleElement.textContent = `
-      * {
-        pointer-events: none !important;
-        cursor: crosshair !important;
-      }
-      annotator-toolbar, annotator-toolbar *,
-      .annotator-badge, .annotator-badge *,
-      .annotator-ignore {
-        pointer-events: auto !important;
-        cursor: default !important;
-      }
+  function createGlassPane(): HTMLDivElement {
+    const pane = document.createElement('div')
+    pane.id = 'annotator-glass-pane'
+    pane.className = 'annotator-ignore'
+    pane.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: transparent;
+      cursor: crosshair;
+      z-index: ${Z_INDEX.INSPECTION_OVERLAY};
+      pointer-events: auto;
     `
-    document.head.appendChild(inspectionStyleElement)
+
+    // Attach listeners to glass pane instead of document
+    pane.addEventListener('mousedown', handleMouseDown, true)
+    pane.addEventListener('mousemove', handleMouseMove, true)
+    pane.addEventListener('mouseup', handleMouseUp, true)
+    pane.addEventListener('click', preventClick, true)
+    pane.addEventListener('dblclick', preventMouseEvents, true)
+    pane.addEventListener('contextmenu', preventMouseEvents, true)
+
+    document.body.appendChild(pane)
+    return pane
   }
 
-  function removeInspectionStyles(): void {
-    if (inspectionStyleElement) {
-      inspectionStyleElement.remove()
-      inspectionStyleElement = null
+  function removeGlassPane(): void {
+    if (glassPane) {
+      glassPane.remove()
+      glassPane = null
     }
   }
 
@@ -94,12 +101,11 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       document.head.appendChild(hoverKeyframesStyleElement)
     }
 
-    const color = '#A855F7'
+    const color = COLORS.INSPECTION
     const overlay = document.createElement('div')
     overlay.className = 'annotator-hover-overlay'
     const rect = element.getBoundingClientRect()
-    // NOTE: Do NOT add 'annotator-ignore' class - it would override pointer-events: none
-    // via inspection styles' !important rule, blocking element selection
+
     overlay.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -131,16 +137,16 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function getElementAtPoint(x: number, y: number): Element | null {
-    // Temporarily enable pointer-events to use elementFromPoint
-    if (inspectionStyleElement) {
-      inspectionStyleElement.disabled = true
-    }
+    if (!glassPane) return null
+
+    // Temporarily hide glass pane to click through
+    const originalPointerEvents = glassPane.style.pointerEvents
+    glassPane.style.pointerEvents = 'none'
+
     try {
       return document.elementFromPoint(x, y)
     } finally {
-      if (inspectionStyleElement) {
-        inspectionStyleElement.disabled = false
-      }
+      glassPane.style.pointerEvents = originalPointerEvents
     }
   }
 
@@ -149,7 +155,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
     overlay.className = 'annotator-ignore'
     overlay.style.cssText = `
       position: fixed;
-      border: 2px dashed #A855F7;
+      border: 2px dashed ${COLORS.INSPECTION};
       background: rgba(168, 85, 247, 0.1);
       pointer-events: none;
       z-index: ${Z_INDEX.HOVER_OVERLAY};
@@ -198,34 +204,38 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function findElementsFullyInRect(rect: DOMRect): Element[] {
-    // Temporarily enable pointer-events
-    if (inspectionStyleElement) {
-      inspectionStyleElement.disabled = true
-    }
+    // Hide glass pane to ensure accurate measurements if needed
+    if (glassPane) glassPane.style.display = 'none'
 
     try {
       const elements: Element[] = []
-      const allElements = document.body.querySelectorAll('*')
 
-      for (const element of allElements) {
-        if (shouldIgnoreElement?.(element)) continue
-        if (element.tagName === 'SCRIPT' || element.tagName === 'STYLE' || element.tagName === 'NOSCRIPT') continue
+      // Recursive traversal is more efficient than querySelectorAll('*') for filtering
+      function traverse(node: Element) {
+        if (shouldIgnoreElement?.(node)) return
+        if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') return
 
-        const elementRect = element.getBoundingClientRect()
-        // Skip elements with no visible area
-        if (elementRect.width === 0 || elementRect.height === 0) continue
+        const elementRect = node.getBoundingClientRect()
 
-        // Only select if element is 100% inside selection rect
-        if (isFullyContained(elementRect, rect)) {
-          elements.push(element)
+        // Optimization: Skip branch if element is completely outside rect AND not containing the rect
+        // (For simplicity, we traverse all but could optimize spatial pruning here)
+
+        if (elementRect.width > 0 && elementRect.height > 0) {
+          if (isFullyContained(elementRect, rect)) {
+            elements.push(node)
+          }
+        }
+
+        const children = node.children
+        for (let i = 0; i < children.length; i++) {
+          traverse(children[i])
         }
       }
 
+      traverse(document.body)
       return elements
     } finally {
-      if (inspectionStyleElement) {
-        inspectionStyleElement.disabled = false
-      }
+      if (glassPane) glassPane.style.display = 'block'
     }
   }
 
@@ -237,9 +247,10 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function handleMouseDown(e: MouseEvent): void {
-    // Check if clicking on toolbar/badge elements
+    // Glass pane intercepts, so no need to check target usually,
+    // but good to respect ignore rules if event bubbles from toolbar
     const clickedElement = e.target as Element
-    if (shouldIgnoreElement?.(clickedElement)) return
+    if (shouldIgnoreElement?.(clickedElement) && clickedElement !== glassPane) return
 
     mouseDownTime = Date.now()
     dragState = {
@@ -370,31 +381,20 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function preventClick(e: MouseEvent): void {
-    // Prevent default click behavior entirely during inspection
-    const target = e.target as Element
-    if (shouldIgnoreElement?.(target)) return
-
+    // Glass pane intercepts all clicks
     e.preventDefault()
     e.stopPropagation()
     e.stopImmediatePropagation()
   }
 
   function preventMouseEvents(e: Event): void {
-    // Let toolbar/badge events through
-    const target = e.target as Element
-    if (shouldIgnoreElement?.(target)) return
-
-    // Don't prevent if we're dragging (we need mouse events for drag)
-    if (dragState.isDragging) return
-
+    // Glass pane intercepts all mouse events
     e.preventDefault()
     e.stopPropagation()
     e.stopImmediatePropagation()
   }
 
   // Industry standard: Only handle specific shortcuts, don't block all keyboard events
-  // This allows page shortcuts to work and inputs to function normally
-  // Reference: LocatorJS, click-to-component, vite-plugin-vue-inspector
   function handleKeyDown(e: KeyboardEvent): void {
     // Escape to exit inspecting mode
     if (e.key === 'Escape') {
@@ -410,7 +410,6 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
         e.preventDefault()
         onCopy?.()
       }
-      // If text is selected, let browser handle native copy
     }
   }
 
@@ -421,14 +420,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
   }
 
   function cleanup(): void {
-    removeInspectionStyles()
-
-    document.removeEventListener('mousedown', handleMouseDown, true)
-    document.removeEventListener('mousemove', handleMouseMove, true)
-    document.removeEventListener('mouseup', handleMouseUp, true)
-    document.removeEventListener('click', preventClick, true)
-    document.removeEventListener('dblclick', preventMouseEvents, true)
-    document.removeEventListener('contextmenu', preventMouseEvents, true)
+    removeGlassPane()
     document.removeEventListener('keydown', handleKeyDown)
 
     removeHoverHighlight()
@@ -450,16 +442,9 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
       if (isInspecting) return
 
       isInspecting = true
-      addInspectionStyles()
+      glassPane = createGlassPane()
 
-      // Use mousemove + elementFromPoint since pointer-events are disabled
-      document.addEventListener('mousedown', handleMouseDown, true)
-      document.addEventListener('mousemove', handleMouseMove, true)
-      document.addEventListener('mouseup', handleMouseUp, true)
-      document.addEventListener('click', preventClick, true)
-      document.addEventListener('dblclick', preventMouseEvents, true)
-      document.addEventListener('contextmenu', preventMouseEvents, true)
-      // Keyboard: no capture needed - we only handle specific shortcuts, not blocking
+      // Keyboard: attach to document as it bubbles up
       document.addEventListener('keydown', handleKeyDown)
     },
 

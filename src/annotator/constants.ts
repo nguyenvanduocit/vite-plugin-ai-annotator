@@ -4,6 +4,7 @@
 
 // Z-index hierarchy - ensures proper layering of annotator UI elements
 export const Z_INDEX = {
+  INSPECTION_OVERLAY: 999995,
   HIGHLIGHT_OVERLAY: 999996,
   HOVER_OVERLAY: 999997,
   BADGE: 999998,
@@ -22,6 +23,19 @@ export const SCREENSHOT_TIMEOUT_MS = 10000 // 10 seconds
 
 // Cyberpunk color palette for selections
 export const SELECTION_COLORS = ['#FF00FF', '#00FFFF', '#FFFF00'] as const // cyber-pink, cyber-cyan, cyber-yellow
+
+// UI Colors
+export const COLORS = {
+  INSPECTION: '#A855F7',      // Purple for inspection
+  BADGE_TEXT: '#050505',      // Black for badge text
+  BADGE_BG: '#050505',        // Black for badge background
+} as const
+
+// Fonts
+export const FONTS = {
+  MONO: "'JetBrains Mono', monospace",
+  GOOGLE_FONTS_URL: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap",
+} as const
 
 // Text selection settings
 export const TEXT_SELECTION = {

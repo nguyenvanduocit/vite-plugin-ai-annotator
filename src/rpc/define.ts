@@ -13,6 +13,29 @@ export interface PageContext {
   isInspecting: boolean
 }
 
+export interface ElementTextSelection {
+  selectedText: string
+  containerXPath: string
+  containerCssSelector: string
+}
+
+export interface ElementComputedStyles {
+  width: number
+  height: number
+  fontSize: string
+  fontFamily: string
+  color?: string
+  backgroundColor?: string
+  display?: string
+  position?: string
+}
+
+export interface ElementComponentData {
+  componentLocation: string
+  componentName?: string
+  framework?: 'vue' | 'react' | 'angular' | 'svelte' | 'vanilla'
+}
+
 export interface ElementData {
   index: number
   tagName: string
@@ -22,26 +45,9 @@ export interface ElementData {
   attributes: Record<string, string>
   imagePath?: string
   comment?: string
-  textSelection?: {
-    selectedText: string
-    containerXPath: string
-    containerCssSelector: string
-  }
-  computedStyles?: {
-    width: number
-    height: number
-    fontSize: string
-    fontFamily: string
-    color?: string
-    backgroundColor?: string
-    display?: string
-    position?: string
-  }
-  componentData?: {
-    componentLocation: string
-    componentName?: string
-    framework?: 'vue' | 'react' | 'angular' | 'svelte' | 'vanilla'
-  }
+  textSelection?: ElementTextSelection
+  computedStyles?: ElementComputedStyles
+  componentData?: ElementComponentData
   children: ElementData[]
 }
 
