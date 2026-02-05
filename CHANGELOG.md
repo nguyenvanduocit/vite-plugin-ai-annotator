@@ -1,5 +1,66 @@
 # Changelog
 
+## [1.2.0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v1.1.0...v1.2.0) (2026-02-05)
+
+
+### Features
+
+* **detector:** add Nuxt support via data-v-inspector fallback ([0292056](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/0292056b9841a9deb8bdc47e370e63774b6d6c47))
+* **mcp:** add fields parameter to annotator_get_feedback tool ([6f79a4d](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/6f79a4d1031d4710ab90eb8b5c970bf0636f68a9))
+* **plugin:** add autoSetupMcp option for automatic MCP configuration ([886eb17](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/886eb170654ee295208a04e51f365d06cb5396ef))
+* **screenshot:** always use webp format for smaller file size ([2dcdf73](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/2dcdf733a91dc959606b41144af0482933b351f5))
+* **toolbar:** add drag-to-select multiple elements ([2b1e5f4](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/2b1e5f4dae7c74882645d64fd459e90c64d202bb))
+* **toolbar:** add text selection annotation support ([588eac3](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/588eac383c58297d54bf86e31b3aac7f965fa158))
+* **toolbar:** add tooltip and refactor selection handling ([ba62c1d](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/ba62c1da4eaa4f8338a32c6facbc19eafb2a76c7))
+* **toolbar:** auto-resize textarea and update feedback terminology ([62d1760](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/62d176093a86d9c4a2e5983bc88d194fb758db4a))
+* **toolbar:** close comment popover on click outside ([e27e335](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/e27e335664db85e05487f7ec8a5b817bf23774cd))
+* **toolbar:** smart multi-select using LCA algorithm ([9fad99a](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/9fad99a890ffa65d4d99565b7b9a3c393bcb7bfa))
+* **toolbar:** smarter container detection for drag-select ([c5f05c7](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/c5f05c753470ac124360a7357a26198cf48740c5))
+* **ui:** cyberpunk terminal-style redesign ([28e2ae5](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/28e2ae5a1e36a630a55992d88622ad693ee89501))
+
+
+### Bug Fixes
+
+* improve MCP auto-setup feedback and screenshot quality ([b48d3a7](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/b48d3a72592397f24063b02b1dba36726581441b))
+* **inspection:** remove annotator-ignore from hover overlay to allow selection ([152110a](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/152110aff910fc5e10c1c8d355c0f6a1a52da66f))
+* **inspection:** restore text selection support in inspect mode ([fb90ea2](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/fb90ea27fbd694c4135e6df55c334de802d6a624))
+* **mcp:** create default .mcp.json when no configs detected ([ce3e163](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/ce3e163cb4712ffc7a0c1f183b14c6f2f4a4a608))
+* **mcp:** detect existing configs before auto-setup ([987a890](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/987a89030a29d861ff1c93f0462204b7e3c55c9f))
+* **mcp:** move componentData to basic fields, xpath to optional ([3102a2d](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/3102a2db3360079e38b4bca2514cae0e01644288))
+* **mcp:** require selector for screenshot tool ([26f8d42](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/26f8d42039d5945a1172e860919e39c92f53654d))
+* **selection:** fix text selection not being selected after wrap ([2b24e79](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/2b24e79fc4b4b9b10a1d6fb84323a7a91f0024ac))
+* **selection:** optimize autoUpdate by merging badge and overlay into SelectionGroup ([caa4316](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/caa4316415807f8c0c949e78d7a0da5790c3f261))
+* **selection:** overlay handles click events for selected elements ([30754e3](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/30754e383e030fb19732e380542390c262ac90f0))
+* **server:** default listenAddress to 127.0.0.1 for security ([afd92de](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/afd92de26e8bfebe89e846c8e8d678b04824ba14))
+* **server:** increase Socket.IO max buffer size to 50MB ([bdc995e](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/bdc995e2796f06043a4b79f7252aeb412400ce63))
+* **server:** remove race condition in stopServer shutdown ([7533bcb](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/7533bcb7fde7cbbc3e3278cc22f7f8a4ef9a8e32))
+* **toolbar:** add border for visibility on dark backgrounds ([bbd5ffa](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/bbd5ffacfbaaff17e76c60657d642de3586c32c1))
+* **toolbar:** change badge label format from (N) [name] to #N name ([794251b](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/794251b86fe0f4a8574dc18406fef2042df191fe))
+* **toolbar:** clean up orphaned wrapper on selectElement failure ([2bdabaf](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/2bdabafbbdd20ba1c1fa39c680c6bd5059d03677))
+* **toolbar:** clear selection now properly removes all outlines ([8431101](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/8431101f94558fd8809c71f6ad62abf30b6ea24f))
+* **toolbar:** copy text mentions annotator_get_selected_elements tool ([3645394](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/3645394207e1bb953e0ed0df1e373be92de9ea5a))
+* **toolbar:** disable text selection during inspection mode ([377627e](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/377627eb62f536fe64a2e3b0bf9ddff5cc0a752d))
+* **toolbar:** fix popover layout - buttons below textarea instead of overlapping ([fbe5930](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/fbe5930a51c28eeed938e908f5c0351291bb2723))
+* **toolbar:** improve hover highlight with purple marching ants and border radius ([9f9ac52](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/9f9ac52cfae04371d7855aa549e04b399bdeb824))
+* **toolbar:** improve screenshot capture by selector reliability ([3a93b27](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/3a93b2790511253f5b64cb6112a5693c9e5eb386))
+* **toolbar:** include session ID in copy and exit inspect mode after copy ([d26288b](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/d26288b745f15ba4b570c0ad47c245f65e8d5af8))
+* **toolbar:** include session ID in copy text ([0c658a9](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/0c658a9d256621740f950945221f268541b88318))
+* **toolbar:** increase popover button icon size from 12px to 14px ([c06dafe](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/c06dafe4758246c4bc652ab283a8c59b5d5358e7))
+* **toolbar:** increase popover button to 32px and icon to 18px ([1cb5ac9](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/1cb5ac925d62d60f069b76edd28666d978b60eca))
+* **toolbar:** only show console logs when verbose=true ([99d93c3](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/99d93c3db1e03a12005d995da5a203727bf47f55))
+* **toolbar:** popover layout and outline clearing bug ([b49b780](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/b49b780c0f405b9bc80cff11e2e587f2b303096e))
+* **toolbar:** position popover relative to badge for better placement ([4879da7](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/4879da77a110f76180c29487c28825730b2cf5cb))
+* **toolbar:** position popover relative to badge to prevent overlap ([da5abdb](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/da5abdbec40950ab6113f867c94c41714e3e8b63))
+* **toolbar:** prevent click event after drag selection ([3b76a50](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/3b76a50ecc3916fa0f0ed4a32103a748839a5693))
+* **toolbar:** reduce badge size for less visual footprint ([bf947d1](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/bf947d13c079a88768823fe15568d95da5892294))
+* **toolbar:** remove popover label that caused badge overlap ([6cd47bf](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/6cd47bfb034e8a273104f69b327d968d4950be17))
+* **toolbar:** remove textarea min-height buffer ([786188e](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/786188e0d300c3b997963102e4e813074481b810))
+* **toolbar:** update copy button to mention annotator_get_selected_elements ([83f8446](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/83f8446868901640e3388530576241d5ee858e9b))
+* **toolbar:** update help button URL to annotator.aiocean.io ([d43e7e9](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/d43e7e965dc26b28786c6136bca9944c0a957c0a))
+* **toolbar:** update textarea auto-resize max to 120px ([d2d531f](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/d2d531fd96de2e4cb1dd56bab062c497cfffb1d4))
+* **toolbar:** use virtual reference for popover positioning ([191faea](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/191faea1f11938ac51d197092f2b9b318d18b27d))
+* **ui:** add background to popover label for visibility ([fa56732](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/fa5673235c3a5ba28c9c73931c16caa32809023b))
+
 ## [1.2.0](https://github.com/nguyenvanduocit/instantCode/compare/v1.1.0...v1.2.0) (2025-12-26)
 
 
