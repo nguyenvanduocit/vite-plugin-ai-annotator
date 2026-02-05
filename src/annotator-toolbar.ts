@@ -718,16 +718,16 @@ export class AnnotatorToolbar extends LitElement {
   private handleTextSelected(range: Range, commonAncestor: Element) {
     if (!this.selectionManager) return
 
+    // Step 1: Wrap text in a span
+    const result = this.selectionManager.wrapTextRange(range, commonAncestor)
+
+    if (!result) {
+      // wrapTextRange returns null for cross-element selections or exceeding max length
+      this.showToast('Select text within one element')
+      return
+    }
+
     try {
-      // Step 1: Wrap text in a span
-      const result = this.selectionManager.wrapTextRange(range, commonAncestor)
-
-      if (!result) {
-        // wrapTextRange returns null for cross-element selections or exceeding max length
-        this.showToast('Select text within one element')
-        return
-      }
-
       // Step 2: Select the wrapper element (creates badge, overlay, etc.)
       this.selectionManager.selectElement(
         result.wrapper,
@@ -740,6 +740,8 @@ export class AnnotatorToolbar extends LitElement {
       this.selectionCount = this.selectionManager.getSelectedCount()
       this.emitSelectionChanged()
     } catch (error) {
+      // Clean up wrapper if selectElement fails
+      result.wrapper.remove()
       const message = error instanceof Error ? error.message : 'Unknown error'
       this.log('Text selection error:', message)
       this.showToast('Selection error')
