@@ -172,7 +172,7 @@ async function main() {
   try {
     currentSocket = await createServerConnection(serverUrl)
     setupSocketHandlers(currentSocket, serverUrl)
-  } catch (err) {
+  } catch {
     console.error(`Failed to connect to AI Annotator server at ${serverUrl}`)
     console.error('Make sure the server is running: bunx vite-plugin-ai-annotator')
     console.error('Or specify a different server: --server http://localhost:PORT')

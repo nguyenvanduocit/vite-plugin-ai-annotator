@@ -67,7 +67,7 @@ MCP Options:
 
 Server Options:
   -p, --port <number>           Port to run the server on (default: 7318)
-  -l, --listen <address>        Address to bind server to (default: localhost)
+  -l, --listen <address>        Address to bind server to (default: 127.0.0.1)
   -a, --public-address <url>    Public URL for reverse proxy
   -V, --verbose                 Enable verbose logging
   -h, --help                    Show this help message
@@ -116,8 +116,8 @@ Learn more: https://github.com/nguyenvanduocit/instantCode
     }
   }
 
-  // Parse listen address
-  let listenAddress = 'localhost'
+  // Parse listen address (default to loopback for security)
+  let listenAddress = '127.0.0.1'
   if (listenFlag !== -1 && args[listenFlag + 1]) {
     listenAddress = args[listenFlag + 1]
     if (!['localhost', '127.0.0.1', '0.0.0.0', '::1', '::'].includes(listenAddress)) {

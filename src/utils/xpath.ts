@@ -259,7 +259,7 @@ export class XPathUtils {
   private static isUniqueId(id: string): boolean {
     try {
       return document.querySelectorAll(`#${CSS.escape(id)}`).length === 1
-    } catch (error) {
+    } catch {
       return false
     }
   }

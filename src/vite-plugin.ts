@@ -14,7 +14,7 @@ export interface AiAnnotatorOptions {
   port?: number;
   /**
    * Address for the server to listen on
-   * @default 'localhost'
+   * @default '127.0.0.1'
    */
   listenAddress?: string;
   /**
@@ -113,7 +113,7 @@ class AiAnnotatorServer {
 
   constructor(options: AiAnnotatorOptions = {}) {
     const port = options.port ?? 7318;
-    const listenAddress = options.listenAddress ?? 'localhost';
+    const listenAddress = options.listenAddress ?? '127.0.0.1';
 
     this.options = {
       port,
@@ -312,7 +312,7 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
 
       // Auto-setup MCP configuration files
       if (options.autoSetupMcp) {
-        const serverUrl = `http://${options.listenAddress ?? 'localhost'}:${options.port ?? 7318}`;
+        const serverUrl = `http://${options.listenAddress ?? '127.0.0.1'}:${options.port ?? 7318}`;
         const result = autoSetupMcp({
           projectRoot: root,
           serverUrl,

@@ -318,7 +318,7 @@ function buildReactSourceHierarchy(fiber: ReactFiber, element: Element): string 
     }
 
     return parts.length > 0 ? parts.join(' > ') : null
-  } catch (error) {
+  } catch {
     return null
   }
 }
@@ -343,7 +343,7 @@ function extractReactSourceMap(fiber: ReactFiber): ComponentInfo['sourceMap'] | 
     }
 
     return null
-  } catch (error) {
+  } catch {
     return null
   }
 }
@@ -532,7 +532,7 @@ function buildVueSourceHierarchy(element: Element, vnode: VueVNode | null): stri
     }
 
     return parts.length > 0 ? parts.join(' > ') : null
-  } catch (error) {
+  } catch {
     return null
   }
 }
@@ -554,7 +554,7 @@ function extractVueSourceMap(vnode: VueVNode | null): ComponentInfo['sourceMap']
     }
 
     return null
-  } catch (error) {
+  } catch {
     return null
   }
 }

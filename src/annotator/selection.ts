@@ -333,7 +333,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
         // surroundContents works when selection is within a single element's text
         // Throws DOMException if range partially selects non-text nodes
         range.surroundContents(wrapper)
-      } catch (error) {
+      } catch {
         // Cross-element selection: surroundContents fails when selection spans multiple elements
         console.warn('[AI Annotator] Cannot wrap cross-element text selection. Please select text within a single paragraph.')
         return null
