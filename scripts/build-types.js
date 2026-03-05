@@ -50,6 +50,29 @@ async function generateTypes() {
       reject(new Error(`Failed to start TypeScript compiler: ${err.message}`))
     })
   })
+
+  // Generate nuxt-module types with ESM-compatible config
+  await new Promise((resolve, reject) => {
+    console.log('Generating nuxt-module TypeScript declarations...')
+
+    const tsc = spawn('bunx', ['tsc', '-p', 'tsconfig.nuxt.json'], {
+      cwd: rootDir,
+      stdio: 'inherit'
+    })
+
+    tsc.on('close', (code) => {
+      if (code === 0) {
+        console.log('Nuxt-module TypeScript declarations generated successfully')
+        resolve()
+      } else {
+        reject(new Error(`Nuxt-module TypeScript compilation failed with code ${code}`))
+      }
+    })
+
+    tsc.on('error', (err) => {
+      reject(new Error(`Failed to start TypeScript compiler: ${err.message}`))
+    })
+  })
 }
 
 generateTypes().catch((err) => {

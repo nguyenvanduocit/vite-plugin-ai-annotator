@@ -52,6 +52,7 @@ export class AnnotatorToolbar extends LitElement {
   private tooltipCleanup: (() => void) | null = null
   private toastTimeout: ReturnType<typeof setTimeout> | null = null
   private clickListenerTimeout: ReturnType<typeof setTimeout> | null = null
+  private skipNextClickOutside = false
 
   private socket: Socket | null = null
   private rpc: RpcClient | null = null
@@ -359,17 +360,17 @@ export class AnnotatorToolbar extends LitElement {
 
   private initializeConsoleCapture() {
     try {
-      // Save all originals first (atomic-like approach)
+      // Save all originals first (atomic - all or nothing)
+      const originals: Partial<Record<typeof CONSOLE_METHODS[number], (...args: unknown[]) => void>> = {}
       CONSOLE_METHODS.forEach((method) => {
-        this.originalConsoleMethods[method] = console[method].bind(console)
+        originals[method] = console[method].bind(console)
       })
 
-      // Then override all
+      // Then override all - if any fails, none are applied
       CONSOLE_METHODS.forEach((method) => {
         console[method] = (...args: unknown[]) => {
-          this.consoleBuffer.push({
-            type: method,
-            args: args.map(arg => {
+          try {
+            const serializedArgs = args.map(arg => {
               try {
                 const str = typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
                 return str.length > CONSOLE_LIMITS.MAX_ARG_LENGTH
@@ -378,19 +379,30 @@ export class AnnotatorToolbar extends LitElement {
               } catch {
                 return '[circular or unserializable]'
               }
-            }),
-            timestamp: Date.now()
-          })
+            })
 
-          // Limit buffer size to prevent memory issues
-          if (this.consoleBuffer.length > CONSOLE_LIMITS.BUFFER_MAX) {
-            this.consoleBuffer = this.consoleBuffer.slice(-CONSOLE_LIMITS.BUFFER_TRIM_TO)
+            this.consoleBuffer.push({
+              type: method,
+              args: serializedArgs,
+              timestamp: Date.now()
+            })
+
+            // Hard limit: prevent memory issues from console spam
+            if (this.consoleBuffer.length > CONSOLE_LIMITS.BUFFER_MAX) {
+              this.consoleBuffer = this.consoleBuffer.slice(-CONSOLE_LIMITS.BUFFER_TRIM_TO)
+            }
+
+            // Call original method
+            originals[method]?.(...args)
+          } catch (captureError) {
+            // If capture fails, still call original to not break app console
+            originals[method]?.(...args)
           }
-
-          // Call original method
-          this.originalConsoleMethods[method]?.(...args)
         }
       })
+
+      // Only save originals after all overrides succeed
+      this.originalConsoleMethods = originals
     } catch (error) {
       // Rollback on any error
       this.restoreConsoleMethods()
@@ -444,21 +456,72 @@ export class AnnotatorToolbar extends LitElement {
   private registerRpcHandlers() {
     if (!this.rpc) return
 
-    this.rpc.handle.getPageContext(async () => this.getPageContext())
-    this.rpc.handle.getSelectedElements(async () => this.getSelectedElements())
-    this.rpc.handle.triggerSelection(async (mode, selector, selectorType) =>
-      this.triggerSelection(mode, selector, selectorType)
-    )
-    this.rpc.handle.captureScreenshot(async (type, selector, quality) =>
-      this.captureScreenshot(type, selector, quality)
-    )
-    this.rpc.handle.clearSelection(async () => this.clearSelection())
-    this.rpc.handle.ping(async () => 'pong')
-    this.rpc.handle.injectCSS(async (css) => this.injectCSS(css))
-    this.rpc.handle.injectJS(async (code) => this.injectJS(code))
-    this.rpc.handle.getConsole(async (clear) => this.getConsoleLogs(clear))
-  }
+    this.rpc.handle.getPageContext(async () => {
+      try { return await this.getPageContext() }
+      catch (error) {
+        this.log('[getPageContext] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
 
+    this.rpc.handle.getSelectedElements(async () => {
+      try { return await this.getSelectedElements() }
+      catch (error) {
+        this.log('[getSelectedElements] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+
+    this.rpc.handle.triggerSelection(async (mode, selector, selectorType) => {
+      try { return await this.triggerSelection(mode, selector, selectorType) }
+      catch (error) {
+        this.log('[triggerSelection] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+
+    this.rpc.handle.captureScreenshot(async (type, selector, quality) => {
+      try { return await this.captureScreenshot(type, selector, quality) }
+      catch (error) {
+        this.log('[captureScreenshot] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+
+    this.rpc.handle.clearSelection(async () => {
+      try { return await this.clearSelection() }
+      catch (error) {
+        this.log('[clearSelection] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+
+    this.rpc.handle.ping(async () => 'pong')
+
+    this.rpc.handle.injectCSS(async (css) => {
+      try { return await this.injectCSS(css) }
+      catch (error) {
+        this.log('[injectCSS] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+
+    this.rpc.handle.injectJS(async (code) => {
+      try { return await this.injectJS(code) }
+      catch (error) {
+        this.log('[injectJS] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+
+    this.rpc.handle.getConsole(async (clear) => {
+      try { return await this.getConsoleLogs(clear) }
+      catch (error) {
+        this.log('[getConsole] Handler error:', error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    })
+  }
   private reportPageContext() {
     if (!this.socket?.connected) return
 
@@ -584,13 +647,14 @@ export class AnnotatorToolbar extends LitElement {
         cacheBust: true,
         pixelRatio: 1,
         includeQueryParams: true,
-        // Filter out elements that cause issues
+        // Filter out all annotator UI elements
         filter: (node) => {
           if (node instanceof Element) {
-            // Skip annotator UI elements
-            if (node.classList?.contains('annotator-badge') ||
-                node.classList?.contains('annotator-highlight-overlay') ||
-                node.tagName?.toLowerCase() === 'annotator-toolbar') {
+            const className = node.className || ''
+            const tagName = node.tagName?.toLowerCase() || ''
+
+            // Skip all annotator elements
+            if (className.includes('annotator-') || tagName === 'annotator-toolbar') {
               return false
             }
           }
@@ -754,6 +818,7 @@ export class AnnotatorToolbar extends LitElement {
     if (this.clickListenerTimeout) {
       clearTimeout(this.clickListenerTimeout)
     }
+    this.skipNextClickOutside = true
     this.clickListenerTimeout = setTimeout(() => {
       document.addEventListener('click', this.handleClickOutside, true)
       this.clickListenerTimeout = null
@@ -789,8 +854,10 @@ export class AnnotatorToolbar extends LitElement {
           })
         })
       })
+
     })
   }
+
 
   private handlePopoverKeydown = (e: KeyboardEvent) => {
     if (!this.commentPopover.visible) return
@@ -804,6 +871,12 @@ export class AnnotatorToolbar extends LitElement {
 
   private handleClickOutside = (e: MouseEvent) => {
     if (!this.commentPopover.visible) return
+
+    // Skip the click that triggered the popover (mouseup fires before click)
+    if (this.skipNextClickOutside) {
+      this.skipNextClickOutside = false
+      return
+    }
 
     const popoverEl = this.shadowRoot?.querySelector('.popover')
     if (!popoverEl) return
@@ -839,6 +912,12 @@ export class AnnotatorToolbar extends LitElement {
       this.popoverCleanup()
       this.popoverCleanup = null
     }
+
+    // Remove focus trap listener
+    const popoverEl = this.shadowRoot?.querySelector('.popover')
+    if (popoverEl) {
+    }
+
     this.commentPopover = { visible: false, element: null, comment: '' }
   }
 
@@ -1075,7 +1154,7 @@ export class AnnotatorToolbar extends LitElement {
   render() {
     if (!this.connected) {
       return html`
-        <div class="toolbar">
+        <div class="toolbar" role="alert" aria-live="polite">
           <div class="error-message">
             ${this.renderErrorIcon()}
             <span>Cannot connect to AI Annotator server</span>
@@ -1085,12 +1164,15 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     return html`
-      <div class="toolbar">
+      <div class="toolbar" role="toolbar" aria-label="AI Annotator tools">
         <button
           class="toolbar-btn ${this.isInspecting ? 'active' : ''}"
           @click=${this.toggleInspect}
           @mouseenter=${(e: MouseEvent) => this.showTooltip(this.isInspecting ? 'Press ESC to exit' : 'Inspect elements', e.currentTarget as HTMLElement)}
           @mouseleave=${() => this.hideTooltip()}
+          aria-label="${this.isInspecting ? 'Exit inspection mode' : 'Inspect elements'}"
+          aria-pressed="${this.isInspecting}"
+          title="${this.isInspecting ? 'Press ESC to exit' : 'Inspect elements'}"
         >
           ${this.renderCursorIcon()}
         </button>
@@ -1102,19 +1184,24 @@ export class AnnotatorToolbar extends LitElement {
             @mouseenter=${(e: MouseEvent) => this.showTooltip('Clear selections', e.currentTarget as HTMLElement)}
             @mouseleave=${() => this.hideTooltip()}
             ?disabled=${this.selectionCount === 0}
+            aria-label="Clear all selections"
+            aria-disabled="${this.selectionCount === 0}"
+            title="Clear selections"
           >
             ${this.renderTrashIcon()}
           </button>
-          ${this.selectionCount > 0 ? html`<span class="badge">${this.selectionCount}</span>` : ''}
+          ${this.selectionCount > 0 ? html`<span class="badge" aria-label="${this.selectionCount} selections">${this.selectionCount}</span>` : ''}
         </div>
 
-        <div class="divider"></div>
+        <div class="divider" role="separator" aria-orientation="vertical"></div>
 
         <button
           class="toolbar-btn"
           @click=${this.copySessionId}
           @mouseenter=${(e: MouseEvent) => this.showTooltip('Copy session', e.currentTarget as HTMLElement)}
           @mouseleave=${() => this.hideTooltip()}
+          aria-label="Copy session ID to clipboard"
+          title="Copy session"
         >
           ${this.renderClipboardIcon()}
         </button>
@@ -1124,17 +1211,19 @@ export class AnnotatorToolbar extends LitElement {
           @click=${this.openHelpPage}
           @mouseenter=${(e: MouseEvent) => this.showTooltip('Help', e.currentTarget as HTMLElement)}
           @mouseleave=${() => this.hideTooltip()}
+          aria-label="Open help documentation"
+          title="Help"
         >
           ${this.renderHelpIcon()}
         </button>
 
-        ${this.toastMessage ? html`<div class="toast">${this.toastMessage}</div>` : ''}
+        ${this.toastMessage ? html`<div class="toast" role="status" aria-live="polite">${this.toastMessage}</div>` : ''}
       </div>
 
-      ${this.tooltip.visible ? html`<div class="tooltip">${this.tooltip.text}</div>` : ''}
+      ${this.tooltip.visible ? html`<div class="tooltip" role="tooltip">${this.tooltip.text}</div>` : ''}
 
       ${this.commentPopover.visible ? html`
-        <div class="popover">
+        <div class="popover" role="dialog" aria-label="Element comment" aria-modal="false">
           <textarea
             class="popover-input"
             placeholder="Add a note... (↵ to close)"
@@ -1142,12 +1231,13 @@ export class AnnotatorToolbar extends LitElement {
             @input=${this.handlePopoverInput}
             @keydown=${this.handlePopoverInputKeydown}
             rows="1"
+            aria-label="Add a comment for the selected element"
           ></textarea>
-          <div class="popover-actions">
-            <button class="popover-btn danger" @click=${this.removeSelectedElement} title="Remove selection">
+          <div class="popover-actions" role="group" aria-label="Comment actions">
+            <button class="popover-btn danger" @click=${this.removeSelectedElement} title="Remove selection" aria-label="Remove this selection">
               ${this.renderTrashIcon()}
             </button>
-            <button class="popover-btn" @click=${this.hideCommentPopover} title="Close (Esc)">
+            <button class="popover-btn" @click=${this.hideCommentPopover} title="Close (Esc)" aria-label="Close comment">
               ${this.renderCloseIcon()}
             </button>
           </div>

@@ -40,6 +40,10 @@ interface VueVNode {
     file?: string
     name?: string
   }
+  el?: Element
+  ctx?: {
+    vnode?: VueVNode
+  }
 }
 
 interface VueInstance {
@@ -402,17 +406,20 @@ function getVueComponentInfo(element: Element): ComponentInfo | null {
 
   // Vue 3 with context vnode (used by vite-plugin-vue-inspector)
   if (!codeLocation) {
-    const ctxVNode = (el.__vnode as any)?.ctx?.vnode
-    if (ctxVNode?.el === el) {
-      codeLocation = ctxVNode?.props?.__v_inspector
+    const ctxVNode = el.__vnode?.ctx?.vnode
+    if (ctxVNode && ctxVNode.el === element) {
+      codeLocation = ctxVNode.props?.__v_inspector
     }
   }
 
   // Vue 3 with parent component
   if (!codeLocation) {
-    codeLocation = el.__vueParentComponent?.vnode?.props?.__v_inspector
-    vueInstance = el.__vueParentComponent ?? null
-    vnode = el.__vueParentComponent?.vnode ?? null
+    const parentComponent = el.__vueParentComponent
+    if (parentComponent?.vnode) {
+      codeLocation = parentComponent.vnode.props?.__v_inspector
+      vueInstance = parentComponent
+      vnode = parentComponent.vnode
+    }
   }
 
   // Direct __v_inspector on element
@@ -449,9 +456,35 @@ function getVueComponentInfo(element: Element): ComponentInfo | null {
     return null
   }
 
+  // Parse data-v-inspector format: "path/to/file.vue:line:column" or "path/to/file.vue@componentName"
   const componentInfo: ComponentInfo = {
     componentLocation: codeLocation,
     framework: 'vue'
+  }
+
+  // Try to parse file:line:column format (Nuxt DevTools standard)
+  const match = codeLocation.match(/^(.+\.vue):(\d+):(\d+)$/)
+  if (match) {
+    const [, file, line, column] = match
+    const componentName = file.split('/').pop()?.replace('.vue', '') || 'Anonymous'
+    componentInfo.componentName = componentName
+    componentInfo.elementLocation = {
+      file,
+      line: parseInt(line, 10),
+      column: parseInt(column, 10),
+    }
+    componentInfo.sourceMap = {
+      originalLine: parseInt(line, 10),
+      originalColumn: parseInt(column, 10),
+      originalSource: file,
+    }
+  } else {
+    // Try to extract component name from path (e.g., "components/Button.vue" -> "Button")
+    const pathParts = codeLocation.split('/')
+    const lastPart = pathParts[pathParts.length - 1]
+    if (lastPart) {
+      componentInfo.componentName = lastPart.replace('.vue', '').split('@')[0]
+    }
   }
 
   // Try to extract element-specific location information

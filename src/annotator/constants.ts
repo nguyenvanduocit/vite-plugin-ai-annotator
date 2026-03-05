@@ -3,12 +3,14 @@
  */
 
 // Z-index hierarchy - ensures proper layering of annotator UI elements
+// Using high values to stay above most third-party widgets (Intercom, Stripe, etc.)
+// If conflicts occur, increase all values uniformly (maintain relative ordering)
 export const Z_INDEX = {
-  INSPECTION_OVERLAY: 999995,
-  HIGHLIGHT_OVERLAY: 999996,
-  HOVER_OVERLAY: 999997,
-  BADGE: 999998,
-  TOOLBAR: 999999,
+  INSPECTION_OVERLAY: 999995,  // Mouse inspection hover highlight
+  HIGHLIGHT_OVERLAY: 999996,   // Selected element marching ants border
+  HOVER_OVERLAY: 999997,       // Element hover during inspection mode
+  BADGE: 999998,               // Selection badge with index number
+  TOOLBAR: 999999,             // Bottom-right toolbar UI
 } as const
 
 // Console capture limits

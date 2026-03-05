@@ -28,6 +28,7 @@ Works with all Vite-supported frameworks:
 - 🅰️ **Angular** - Recognizes components and directives
 - 🟠 **Svelte** - Identifies components and stores
 - 📄 **Vanilla JS** - Works with plain HTML/CSS/JS
+- 🟦 **Nuxt.js** - Full support via Nuxt module (Nuxt 4+)
 
 ## Installation
 
@@ -44,13 +45,15 @@ Then ask Claude: *"Set up ai-annotator for my project"* - it handles the rest!
 
 ### Option 2: Manual Setup
 
-#### Step 1: Install the package
+#### For Vite Projects
+
+##### Step 1: Install the package
 
 ```bash
 bun add -d vite-plugin-ai-annotator
 ```
 
-#### Step 2: Add to your Vite config
+##### Step 2: Add to your Vite config
 
 ```typescript
 import { defineConfig } from 'vite';
@@ -63,7 +66,33 @@ export default defineConfig({
 });
 ```
 
-#### Step 3: Configure MCP
+#### For Nuxt.js Projects (Nuxt 4+)
+
+##### Step 1: Install the package
+
+```bash
+bun add -d vite-plugin-ai-annotator
+```
+
+##### Step 2: Add to your `nuxt.config.ts`
+
+```typescript
+export default defineNuxtConfig({
+  modules: [
+    'vite-plugin-ai-annotator/nuxt'
+  ],
+  // Optional: Configure the annotator
+  aiAnnotator: {
+    port: 7318,
+    autoSetupMcp: true,
+    verbose: false,
+  }
+})
+```
+
+**That's it!** Nuxt handles the rest automatically.
+
+#### Configure MCP (Vite and Nuxt)
 
 **Option A: Auto Setup (Recommended)**
 
@@ -75,6 +104,17 @@ annotator({
 })
 ```
 
+For Nuxt, configure in `nuxt.config.ts`:
+
+```typescript
+export default defineNuxtConfig({
+  modules: ['vite-plugin-ai-annotator/nuxt'],
+  aiAnnotator: {
+    autoSetupMcp: true,
+  }
+})
+```
+
 This automatically creates/updates `.mcp.json`, `.cursor/mcp.json`, and `.vscode/mcp.json` based on your project.
 
 **Option B: Manual Setup**
@@ -83,7 +123,7 @@ This automatically creates/updates `.mcp.json`, `.cursor/mcp.json`, and `.vscode
 claude mcp add annotator -- npx vite-plugin-ai-annotator mcp -s http://localhost:7318
 ```
 
-#### Step 4: Start your dev server
+#### Step 3: Start your dev server
 
 ```bash
 bun dev
