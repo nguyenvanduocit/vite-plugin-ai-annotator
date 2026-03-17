@@ -36,11 +36,13 @@ src/
   vite-plugin.ts         Vite plugin. Spawns server as child process, injects toolbar script
                            into HTML (SPA via transformIndexHtml, SSR via middleware interception)
   auto-setup-mcp.ts      Writes MCP config to .mcp.json, .cursor/mcp.json, .vscode/mcp.json
-  auto-setup-skills.ts   Writes AI tool instruction files with server address:
-                           - CLAUDE.md (marker-delimited section for Claude Code)
-                           - .cursor/rules/ai-annotator.mdc (alwaysApply for Cursor)
-                           - AGENTS.md (marker-delimited section for Codex)
-                           - .github/copilot-instructions.md (for Copilot)
+  auto-setup-skills.ts   Writes AI tool skill/instruction files with server address:
+                           - .claude/skills/ai-annotator/SKILL.md (Claude Code)
+                           - .cursor/rules/ai-annotator.mdc (Cursor, alwaysApply)
+                           - .windsurf/rules/ai-annotator.md (Windsurf, always_on)
+                           - AGENTS.md (Codex, marker-delimited)
+                           - .github/instructions/ai-annotator.instructions.md (Copilot)
+                           - .clinerules/ai-annotator.md (Cline)
   annotator-toolbar.ts   Lit web component (<annotator-toolbar>). Shadow DOM, cyberpunk UI
   annotator/
     selection.ts         Element selection manager (badges, overlays, text wrapping)

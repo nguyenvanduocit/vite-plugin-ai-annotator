@@ -144,9 +144,10 @@ Example prompt: *"Make the selected button larger and change its color to blue"*
 
 ```typescript
 annotator({
-  port: 7318,           // Server port (default: 7318)
-  autoSetupMcp: true,   // Auto-configure MCP files (default: false)
-  verbose: false,       // Enable detailed logging (default: false)
+  port: 7318,              // Server port (default: 7318)
+  autoSetupMcp: true,      // Auto-configure MCP files (default: false)
+  autoSetupSkills: true,   // Auto-write AI tool skill files (default: true)
+  verbose: false,          // Enable detailed logging (default: false)
 })
 ```
 
@@ -165,5 +166,49 @@ When `autoSetupMcp: true`, the plugin automatically:
    - `.vscode/mcp.json` - VS Code (only if `.vscode/` exists)
 
 3. **Preserves existing config** - merges with other MCP servers, doesn't overwrite
+
+### Auto AI Skills Setup
+
+When `autoSetupSkills: true` (default), the plugin writes skill/instruction files on every dev server start with the correct server address baked in. This means AI tools automatically know how to call the REST API:
+
+| AI Tool | File | Format |
+|---------|------|--------|
+| Claude Code | `.claude/skills/ai-annotator/SKILL.md` | YAML frontmatter (`name`, `description`) |
+| Cursor | `.cursor/rules/ai-annotator.mdc` | `alwaysApply: true` |
+| Windsurf | `.windsurf/rules/ai-annotator.md` | `trigger: always_on` |
+| Codex | `AGENTS.md` | Marker-delimited section |
+| Copilot | `.github/instructions/ai-annotator.instructions.md` | `applyTo: "**"` |
+| Cline | `.clinerules/ai-annotator.md` | Plain markdown |
+
+Files are updated on every server restart, so the address is always correct.
+
+## REST API
+
+The server exposes a plain HTTP REST API at `/api/*`, usable by any HTTP client — no MCP required.
+
+```bash
+# List sessions
+curl http://localhost:7318/api/sessions
+
+# Get feedback
+curl http://localhost:7318/api/sessions/<id>/feedback
+
+# Inject JS
+curl -X POST http://localhost:7318/api/sessions/<id>/inject-js \
+  -H 'Content-Type: application/json' \
+  -d '{"code": "document.title"}'
+```
+
+| Method | Endpoint | Body/Query | Description |
+|--------|----------|------------|-------------|
+| `GET` | `/api/sessions` | — | List connected browser sessions |
+| `GET` | `/api/sessions/:id/page-context` | — | Page URL, title, selection count |
+| `POST` | `/api/sessions/:id/select` | `{mode?, selector?, selectorType?}` | Trigger feedback selection |
+| `GET` | `/api/sessions/:id/feedback` | `?fields=xpath,attributes,styles,children` | Get selected feedback items |
+| `DELETE` | `/api/sessions/:id/feedback` | — | Clear all selections |
+| `POST` | `/api/sessions/:id/screenshot` | `{type?, selector?, quality?}` | Capture screenshot |
+| `POST` | `/api/sessions/:id/inject-css` | `{css}` | Inject CSS into page |
+| `POST` | `/api/sessions/:id/inject-js` | `{code}` | Execute JS in page context |
+| `GET` | `/api/sessions/:id/console` | `?clear=true` | Get captured console logs |
 
 **Happy coding! 🚀**
