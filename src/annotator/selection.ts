@@ -188,6 +188,7 @@ export function createElementSelectionManager(): ElementSelectionManager {
     overlay.className = 'annotator-highlight-overlay annotator-ignore'
     overlay.style.cssText = `
       position: fixed;
+      margin: 0 !important;
       cursor: pointer;
       box-sizing: border-box;
       z-index: ${Z_INDEX.HIGHLIGHT_OVERLAY};
@@ -218,6 +219,8 @@ export function createElementSelectionManager(): ElementSelectionManager {
         cleanup?.()
         badge.remove()
         overlay.remove()
+        selectedElements.delete(element)
+        selectionGroups.delete(element)
         return
       }
 

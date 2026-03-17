@@ -5,6 +5,7 @@ import { dirname, join, relative } from 'node:path';
 import { existsSync } from 'node:fs';
 import MagicString from 'magic-string';
 import { autoSetupMcp } from './auto-setup-mcp';
+import { autoSetupSkills } from './auto-setup-skills';
 
 export interface AiAnnotatorOptions {
   /**
@@ -39,6 +40,12 @@ export interface AiAnnotatorOptions {
    * @default false
    */
   autoSetupMcp?: boolean;
+  /**
+   * Automatically setup AI tool skill/instruction files with server address
+   * Writes to: CLAUDE.md, .cursor/rules/, AGENTS.md, .github/copilot-instructions.md
+   * @default true
+   */
+  autoSetupSkills?: boolean;
 }
 
 // Data attribute name for source location
@@ -58,7 +65,7 @@ function injectSourceLocations(code: string, id: string, root: string): { code: 
 
   // Match opening HTML tags
   // Captures: full match, tag name, attributes
-  const tagRegex = /<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^>]*?)?)\s*\/?>/g;
+  const tagRegex = /<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+(?:[^>"'\/=]+(?:=(?:"[^"]*"|'[^']*'|[^\s>"']+))?|\s))*)\s*\/?>/g;
 
   // Elements to skip (framework components, scripts, styles, void elements)
   const skipTags = new Set([
@@ -122,6 +129,7 @@ class AiAnnotatorServer {
       verbose: options.verbose ?? false,
       injectSourceLoc: options.injectSourceLoc ?? true,
       autoSetupMcp: options.autoSetupMcp ?? false,
+      autoSetupSkills: options.autoSetupSkills ?? true,
     };
 
     // Detect if we're running from source (src/) or from installed package (dist/)
@@ -198,12 +206,6 @@ class AiAnnotatorServer {
       stdio: this.options.verbose ? 'inherit' : 'pipe',
     });
 
-    if (!this.options.verbose && this.serverProcess.stdout) {
-      this.serverProcess.stdout.on('data', (_data) => {
-        // Pipe output for debugging if needed
-      });
-    }
-
     if (!this.options.verbose && this.serverProcess.stderr) {
       this.serverProcess.stderr.on('data', (data) => {
         console.error(`[ai-annotator-server] Error: ${data}`);
@@ -221,8 +223,12 @@ class AiAnnotatorServer {
       this.serverProcess = null;
     });
 
-    // Give server a moment to start
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      if (await this.isServerRunning()) return;
+    }
+    this.log('Server did not respond to health check within 5 seconds');
   }
 
   async stop(): Promise<void> {
@@ -326,6 +332,20 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
           console.log(`[ai-annotator] ✅ MCP config already up-to-date`);
         }
       }
+
+      // Auto-setup AI tool skill/instruction files
+      if (options.autoSetupSkills !== false) {
+        const serverUrl = options.publicAddress ?? `http://${options.listenAddress ?? '127.0.0.1'}:${options.port ?? 7318}`;
+        const skillsResult = autoSetupSkills({
+          projectRoot: root,
+          serverUrl,
+          verbose: options.verbose,
+        });
+
+        if (skillsResult.updated.length > 0) {
+          console.log(`[ai-annotator] ✅ AI skills updated: ${skillsResult.updated.map(f => f.replace(root + '/', '')).join(', ')}`);
+        }
+      }
     },
 
     async buildStart() {
@@ -367,29 +387,23 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
 
     // For SSR frameworks like Nuxt - intercept HTML responses
     configureServer(server: ViteDevServer) {
+      server.httpServer?.on('close', () => {
+        serverManager.stop();
+      });
+
       server.middlewares.use((_req, res, next) => {
         if (!serverManager) {
           return next();
         }
 
-        // Only intercept HTML responses
-        const originalWrite = res.write.bind(res);
         const originalEnd = res.end.bind(res);
         let chunks: Buffer[] = [];
-        let isHtml = false;
 
-        res.write = function(chunk: any, ...args: any[]) {
-          // Check content-type on first write
-          const contentType = res.getHeader('content-type');
-          if (typeof contentType === 'string' && contentType.includes('text/html')) {
-            isHtml = true;
-          }
-
-          if (isHtml && chunk) {
+        res.write = function(chunk: any, ..._args: any[]) {
+          if (chunk) {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-            return true;
           }
-          return originalWrite(chunk, ...args);
+          return true;
         } as any;
 
         res.end = function(chunk?: any, ...args: any[]) {
@@ -397,16 +411,22 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
 
+          const contentType = res.getHeader('content-type');
+          const isHtml = typeof contentType === 'string' && contentType.includes('text/html');
+
           if (isHtml && chunks.length > 0) {
             const html = Buffer.concat(chunks).toString('utf-8');
             const injectedHtml = injectScriptIntoHtml(html, serverManager.getInjectScript());
-
-            // Update content-length header
             res.setHeader('content-length', Buffer.byteLength(injectedHtml));
             return originalEnd(injectedHtml, ...args);
           }
 
-          return originalEnd(chunk, ...args);
+          if (chunks.length > 0) {
+            const body = Buffer.concat(chunks);
+            return originalEnd(body, ...args);
+          }
+
+          return originalEnd(undefined, ...args);
         } as any;
 
         next();

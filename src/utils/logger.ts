@@ -17,12 +17,3 @@ export function createLogger(verbose: boolean): Logger {
     error: verbose ? console.error.bind(console) : () => {},
   }
 }
-
-export function createSilentLogger(): Logger {
-  return {
-    log: () => {},
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-  }
-}

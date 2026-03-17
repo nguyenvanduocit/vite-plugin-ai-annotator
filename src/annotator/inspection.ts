@@ -84,6 +84,7 @@ export function createInspectionManager(callbacks: InspectionCallbacks = {}): In
 
     overlay.style.cssText = `
       position: fixed;
+      margin: 0 !important;
       left: ${rect.left}px;
       top: ${rect.top}px;
       width: ${rect.width}px;

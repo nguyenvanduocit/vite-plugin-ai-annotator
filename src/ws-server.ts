@@ -7,12 +7,12 @@ import express from 'express'
 import { Server as SocketIOServer, Socket } from 'socket.io'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { z } from 'zod'
 import { createRpcServer, type RpcServer } from './rpc/server.generated'
-import { isRpcError } from './rpc/types.generated'
 import type { BrowserSession } from './rpc/define'
 import { createLogger, type Logger } from './utils/logger'
-import { saveScreenshot, filterFeedbackFields } from './utils/screenshot'
+import { getVersion } from './utils/version'
+import { registerMcpTools, type AnnotatorConnection, type GetConnection, type ListSessions } from './mcp-tools'
+import { saveScreenshot, filterFeedbackFields, type FeedbackField } from './utils/screenshot'
 
 export interface ServerInstance {
   app: Express
@@ -22,6 +22,8 @@ export interface ServerInstance {
   listenAddress: string
   publicAddress: string
   verbose: boolean
+  getAllSessions(): BrowserSession[]
+  getRpc(sessionId?: string): { rpc: RpcServer; sessionId: string } | null
 }
 
 export interface BrowserConnection {
@@ -30,38 +32,11 @@ export interface BrowserConnection {
   session: BrowserSession
 }
 
-// Session connection registry (stateless - no "active" session concept)
-const sessions = new Map<string, BrowserConnection>()
-
 function generateSessionId(): string {
   return crypto.randomUUID()
 }
 
-export function getAllSessions(): BrowserSession[] {
-  return Array.from(sessions.values()).map(conn => conn.session)
-}
-
-// Get RPC client for a specific session, or auto-select if only one session exists
-export function getRpc(sessionId?: string): { rpc: RpcServer; sessionId: string } | null {
-  if (sessionId) {
-    const conn = sessions.get(sessionId)
-    return conn ? { rpc: conn.rpc, sessionId } : null
-  }
-
-  // Auto-select if only one session
-  if (sessions.size === 1) {
-    const entry = sessions.entries().next().value
-    if (entry) {
-      const [id, conn] = entry
-      return { rpc: conn.rpc, sessionId: id }
-    }
-  }
-
-  return null
-}
-
-
-function setupRoutes(app: Express, publicAddress: string, verbose: boolean): void {
+function setupRoutes(app: Express, publicAddress: string, verbose: boolean, sessions: Map<string, BrowserConnection>): void {
   app.get('/annotator-toolbar.js', (_req, res) => {
     try {
       const isProduction = process.env.NODE_ENV === 'production'
@@ -97,17 +72,122 @@ document.body.prepend(toolbar);
 
   // API endpoints for session discovery
   app.get('/api/sessions', (_req, res) => {
-    res.json(getAllSessions())
+    res.json(getAllSessionsList(sessions))
   })
 }
 
-function setupSocketIO(io: SocketIOServer, logger: Logger): void {
+function getAllSessionsList(sessions: Map<string, BrowserConnection>): BrowserSession[] {
+  return Array.from(sessions.values()).map(conn => conn.session)
+}
+
+function getRpcFromSessions(sessions: Map<string, BrowserConnection>, sessionId?: string): { rpc: RpcServer; sessionId: string } | null {
+  if (sessionId) {
+    const conn = sessions.get(sessionId)
+    return conn ? { rpc: conn.rpc, sessionId } : null
+  }
+
+  // Auto-select if only one session
+  if (sessions.size === 1) {
+    const entry = sessions.entries().next().value
+    if (entry) {
+      const [id, conn] = entry
+      return { rpc: conn.rpc, sessionId: id }
+    }
+  }
+
+  return null
+}
+
+// Setup thin Socket.IO event forwarding for mcp-stdio bridge clients.
+// These are NOT MCP tool definitions (no schemas/descriptions) - just event handlers
+// that forward calls to the browser RPC. MCP tool logic lives in mcp-tools.ts.
+function setupMcpClientSocket(socket: Socket, logger: Logger, sessions: Map<string, BrowserConnection>): void {
+  logger.log('MCP client connected')
+
+  type Callback<T = unknown> = (response: { success: boolean; data?: T; error?: string }) => void
+
+  // Helper: resolve connection, call async fn, return result via callback
+  async function withConnection<T>(
+    sessionId: string | undefined,
+    callback: Callback<T>,
+    fn: (conn: AnnotatorConnection) => Promise<T>
+  ): Promise<void> {
+    const conn = getRpcOrError(sessions, sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    try {
+      const ac = createAnnotatorConnection(conn.rpc, conn.sessionId)
+      const result = await fn(ac)
+      callback({ success: true, data: result })
+    } catch (err) {
+      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  socket.on('mcp:listSessions', (callback: Callback) => {
+    callback({ success: true, data: getAllSessionsList(sessions) })
+  })
+
+  socket.on('mcp:getPageContext', (sessionId: string | undefined, callback: Callback) => {
+    withConnection(sessionId, callback, (c) => c.getPageContext(10000))
+  })
+
+  socket.on('mcp:triggerSelection', (
+    sessionId: string | undefined, mode: 'inspect' | 'selector',
+    selector: string | undefined, selectorType: 'css' | 'xpath' | undefined,
+    callback: Callback
+  ) => {
+    withConnection(sessionId, callback, (c) => c.triggerSelection(mode, selector, selectorType, 10000))
+  })
+
+  socket.on('mcp:getSelectedElements', (sessionId: string | undefined, callback: Callback) => {
+    withConnection(sessionId, callback, (c) => c.getSelectedElements(15000))
+  })
+
+  socket.on('mcp:captureScreenshot', (
+    sessionId: string | undefined, type: 'viewport' | 'element',
+    selector: string | undefined, quality: number | undefined,
+    callback: Callback
+  ) => {
+    withConnection(sessionId, callback, (c) => c.captureScreenshot(type, selector, quality, 30000))
+  })
+
+  socket.on('mcp:clearSelection', (sessionId: string | undefined, callback: Callback) => {
+    const conn = getRpcOrError(sessions, sessionId)
+    if ('error' in conn) {
+      callback({ success: false, error: conn.error })
+      return
+    }
+    createAnnotatorConnection(conn.rpc, conn.sessionId).clearSelection()
+    callback({ success: true })
+  })
+
+  socket.on('mcp:injectCSS', (sessionId: string | undefined, css: string, callback: Callback) => {
+    withConnection(sessionId, callback, (c) => c.injectCSS(css, 10000))
+  })
+
+  socket.on('mcp:injectJS', (sessionId: string | undefined, code: string, callback: Callback) => {
+    withConnection(sessionId, callback, (c) => c.injectJS(code, 15000))
+  })
+
+  socket.on('mcp:getConsole', (sessionId: string | undefined, clear: boolean | undefined, callback: Callback) => {
+    withConnection(sessionId, callback, (c) => c.getConsole(clear, 15000))
+  })
+
+  socket.on('disconnect', () => {
+    logger.log('MCP client disconnected')
+  })
+}
+
+function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string, BrowserConnection>): void {
   io.on('connection', (socket: Socket) => {
     const clientType = socket.handshake.query.clientType as string | undefined
 
-    // Handle MCP CLI client
+    // Handle MCP CLI client (stdio bridge)
     if (clientType === 'mcp') {
-      setupMcpClientSocket(socket, logger)
+      setupMcpClientSocket(socket, logger, sessions)
       return
     }
 
@@ -130,7 +210,7 @@ function setupSocketIO(io: SocketIOServer, logger: Logger): void {
 
     // Register server-side RPC handlers
     rpc.handle.getSessions(async () => {
-      return getAllSessions()
+      return getAllSessionsList(sessions)
     })
 
     rpc.handle.ping(async () => {
@@ -159,193 +239,11 @@ function setupSocketIO(io: SocketIOServer, logger: Logger): void {
   })
 }
 
-// Setup MCP client socket handlers
-function setupMcpClientSocket(socket: Socket, logger: Logger): void {
-  logger.log('MCP client connected')
-
-  // mcp:listSessions
-  socket.on('mcp:listSessions', (callback: (response: { success: boolean; data?: BrowserSession[]; error?: string }) => void) => {
-    callback({ success: true, data: getAllSessions() })
-  })
-
-  // mcp:getPageContext
-  socket.on('mcp:getPageContext', async (sessionId: string | undefined, callback: (response: { success: boolean; data?: unknown; error?: string }) => void) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.getPageContext(10000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  // mcp:triggerSelection
-  socket.on('mcp:triggerSelection', async (
-    sessionId: string | undefined,
-    mode: 'inspect' | 'selector',
-    selector: string | undefined,
-    selectorType: 'css' | 'xpath' | undefined,
-    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
-  ) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.triggerSelection(mode, selector, selectorType, 10000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  // mcp:getSelectedElements
-  socket.on('mcp:getSelectedElements', async (sessionId: string | undefined, callback: (response: { success: boolean; data?: unknown; error?: string }) => void) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.getSelectedElements(15000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  // mcp:captureScreenshot
-  socket.on('mcp:captureScreenshot', async (
-    sessionId: string | undefined,
-    type: 'viewport' | 'element',
-    selector: string | undefined,
-    quality: number | undefined,
-    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
-  ) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.captureScreenshot(type, selector, quality, 30000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  // mcp:clearSelection
-  socket.on('mcp:clearSelection', async (sessionId: string | undefined, callback: (response: { success: boolean; error?: string }) => void) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    conn.rpc.client.clearSelection()
-    callback({ success: true })
-  })
-
-  // mcp:injectCSS
-  socket.on('mcp:injectCSS', async (
-    sessionId: string | undefined,
-    css: string,
-    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
-  ) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.injectCSS(css, 10000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  // mcp:injectJS
-  socket.on('mcp:injectJS', async (
-    sessionId: string | undefined,
-    code: string,
-    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
-  ) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.injectJS(code, 15000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  // mcp:getConsole
-  socket.on('mcp:getConsole', async (
-    sessionId: string | undefined,
-    clear: boolean | undefined,
-    callback: (response: { success: boolean; data?: unknown; error?: string }) => void
-  ) => {
-    const conn = getRpcOrError(sessionId)
-    if ('error' in conn) {
-      callback({ success: false, error: conn.error })
-      return
-    }
-    try {
-      const result = await conn.rpc.client.getConsole(clear, 15000)
-      if (isRpcError(result)) {
-        callback({ success: false, error: result.message })
-      } else {
-        callback({ success: true, data: result })
-      }
-    } catch (err) {
-      callback({ success: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  })
-
-  socket.on('disconnect', () => {
-    logger.log('MCP client disconnected')
-  })
-}
-
-// Helper to get RPC or return error message (shared between MCP client socket and MCP server)
-function getRpcOrError(sessionId?: string): { rpc: RpcServer; sessionId: string } | { error: string } {
-  const result = getRpc(sessionId)
+// Helper to get RPC or return error message
+function getRpcOrError(sessions: Map<string, BrowserConnection>, sessionId?: string): { rpc: RpcServer; sessionId: string } | { error: string } {
+  const result = getRpcFromSessions(sessions, sessionId)
   if (!result) {
-    const allSessions = getAllSessions()
+    const allSessions = getAllSessionsList(sessions)
     if (allSessions.length === 0) {
       return { error: 'No browser connected. Add the annotator script to your webpage.' }
     }
@@ -354,218 +252,44 @@ function getRpcOrError(sessionId?: string): { rpc: RpcServer; sessionId: string 
   return { rpc: result.rpc, sessionId: result.sessionId }
 }
 
-// MCP Server setup - Stateless design
-// All tools accept optional sessionId - auto-selects if only one session exists
-function createMcpServer(): McpServer {
+// Adapt RPC server into AnnotatorConnection interface
+function createAnnotatorConnection(rpc: RpcServer, sessionId: string): AnnotatorConnection {
+  return {
+    sessionId,
+    getPageContext: (timeout) => rpc.client.getPageContext(timeout),
+    getSelectedElements: (timeout) => rpc.client.getSelectedElements(timeout),
+    triggerSelection: (mode, selector, selectorType, timeout) => rpc.client.triggerSelection(mode, selector, selectorType, timeout),
+    captureScreenshot: (type, selector, quality, timeout) => rpc.client.captureScreenshot(type, selector, quality, timeout),
+    clearSelection: () => rpc.client.clearSelection(),
+    injectCSS: (css, timeout) => rpc.client.injectCSS(css, timeout),
+    injectJS: (code, timeout) => rpc.client.injectJS(code, timeout),
+    getConsole: (clear, timeout) => rpc.client.getConsole(clear, timeout),
+  }
+}
+
+// MCP Server setup using shared tool definitions
+function createMcpServer(sessions: Map<string, BrowserConnection>): McpServer {
   const mcp = new McpServer({
     name: 'ai-annotator',
-    version: '1.0.0',
+    version: getVersion(),
   })
 
-  // Common session param for all browser-interacting tools
-  const sessionIdParam = z.string().optional().describe('Browser session ID (optional if only one session)')
+  const listSessions: ListSessions = async () => getAllSessionsList(sessions)
 
-  // Helper to create text response
-  function textResponse(text: string) {
-    return { content: [{ type: 'text' as const, text }] }
+  const getConnection: GetConnection = (sessionId?: string) => {
+    const conn = getRpcOrError(sessions, sessionId)
+    if ('error' in conn) return { error: conn.error }
+    return createAnnotatorConnection(conn.rpc, conn.sessionId)
   }
 
-  // Tool: annotator_list_sessions
-  mcp.tool(
-    'annotator_list_sessions',
-    'List all connected browser sessions',
-    {},
-    async () => {
-      const sessionList = getAllSessions()
-      return textResponse(
-        sessionList.length > 0
-          ? JSON.stringify(sessionList, null, 2)
-          : 'No browser sessions connected. Add the annotator script to your webpage.'
-      )
-    }
-  )
-
-  // Tool: annotator_get_page_context
-  mcp.tool(
-    'annotator_get_page_context',
-    'Get current page context from browser session (URL, title, selection count)',
-    { sessionId: sessionIdParam },
-    async ({ sessionId }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.getPageContext(10000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      return textResponse(JSON.stringify(result, null, 2))
-    }
-  )
-
-  // Tool: annotator_select_feedback
-  mcp.tool(
-    'annotator_select_feedback',
-    'Enter feedback inspection mode or select feedback by CSS/XPath selector. Use this to let users mark UI elements they want to provide feedback on.',
-    {
-      sessionId: sessionIdParam,
-      mode: z.enum(['inspect', 'selector']).default('inspect').describe('Feedback selection mode'),
-      selector: z.string().optional().describe('CSS or XPath selector (required when mode is "selector")'),
-      selectorType: z.enum(['css', 'xpath']).default('css').describe('Type of selector'),
-    },
-    async ({ sessionId, mode, selector, selectorType }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.triggerSelection(mode, selector, selectorType, 10000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      return textResponse(
-        result.success
-          ? `Feedback selection triggered. ${result.count} feedback item(s) selected.`
-          : `Feedback selection failed: ${result.error}`
-      )
-    }
-  )
-
-  // Tool: annotator_get_feedback
-  const feedbackFieldsEnum = z.enum(['xpath', 'attributes', 'styles', 'children'])
-  mcp.tool(
-    'annotator_get_feedback',
-    'Get data about currently selected feedback items in the browser. Returns details of UI elements the user has marked for feedback.',
-    {
-      sessionId: sessionIdParam,
-      fields: z.array(feedbackFieldsEnum).optional().describe(
-        'Additional fields to include: xpath, attributes, styles (computedStyles), children. By default returns basic fields (index, tagName, cssSelector, textContent), comment, and componentData.'
-      ),
-    },
-    async ({ sessionId, fields }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.getSelectedElements(15000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      if (result.length === 0) {
-        return textResponse('No feedback selected. Use annotator_select_feedback first.')
-      }
-
-      const filtered = filterFeedbackFields(result as unknown as Record<string, unknown>[], fields)
-      return textResponse(JSON.stringify(filtered, null, 2))
-    }
-  )
-
-  // Tool: annotator_capture_screenshot
-  mcp.tool(
-    'annotator_capture_screenshot',
-    'Capture a screenshot (webp) of the viewport or a specific element. Returns the file path where the screenshot is saved.',
-    {
-      sessionId: sessionIdParam,
-      type: z.enum(['viewport', 'element']).default('viewport').describe('Type of screenshot'),
-      selector: z.string().optional().describe('CSS selector for element screenshot'),
-      quality: z.number().min(0).max(1).default(0.7).describe('Image quality (0-1)'),
-    },
-    async ({ sessionId, type, selector, quality }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.captureScreenshot(type, selector, quality, 30000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      if (result.success && result.base64) {
-        const filePath = saveScreenshot(result.base64)
-        return textResponse(filePath)
-      }
-      return textResponse(`Screenshot failed: ${result.error}`)
-    }
-  )
-
-  // Tool: annotator_clear_feedback
-  mcp.tool(
-    'annotator_clear_feedback',
-    'Clear all selected feedback items in the browser. Removes all UI element selections made for feedback.',
-    { sessionId: sessionIdParam },
-    async ({ sessionId }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      conn.rpc.client.clearSelection()
-      return textResponse('Feedback cleared.')
-    }
-  )
-
-  // Tool: annotator_inject_css
-  mcp.tool(
-    'annotator_inject_css',
-    'Inject CSS styles into the page',
-    {
-      sessionId: sessionIdParam,
-      css: z.string().describe('CSS code to inject into the page'),
-    },
-    async ({ sessionId, css }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.injectCSS(css, 10000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      return textResponse(
-        result.success ? 'CSS injected successfully.' : `CSS injection failed: ${result.error}`
-      )
-    }
-  )
-
-  // Tool: annotator_inject_js
-  mcp.tool(
-    'annotator_inject_js',
-    'Inject and execute JavaScript code in the page context',
-    {
-      sessionId: sessionIdParam,
-      code: z.string().describe('JavaScript code to execute in the page'),
-    },
-    async ({ sessionId, code }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.injectJS(code, 15000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      if (result.success) {
-        return textResponse(
-          result.result !== undefined
-            ? `Result: ${JSON.stringify(result.result, null, 2)}`
-            : 'JavaScript executed successfully (no return value).'
-        )
-      }
-      return textResponse(`JavaScript execution failed: ${result.error}`)
-    }
-  )
-
-  // Tool: annotator_get_console
-  mcp.tool(
-    'annotator_get_console',
-    'Get console logs captured from the browser',
-    {
-      sessionId: sessionIdParam,
-      clear: z.boolean().default(false).describe('Clear the console buffer after reading'),
-    },
-    async ({ sessionId, clear }) => {
-      const conn = getRpcOrError(sessionId)
-      if ('error' in conn) return textResponse(conn.error)
-
-      const result = await conn.rpc.client.getConsole(clear, 15000)
-      if (isRpcError(result)) return textResponse(`Error: ${result.message}`)
-
-      return textResponse(
-        result.length > 0 ? JSON.stringify(result, null, 2) : 'No console logs captured.'
-      )
-    }
-  )
+  registerMcpTools(mcp, listSessions, getConnection)
 
   return mcp
 }
 
 // MCP routes - Session-based transport management
-function setupMcpRoutes(app: Express, logger: Logger): void {
-  const mcp = createMcpServer()
+function setupMcpRoutes(app: Express, logger: Logger, sessions: Map<string, BrowserConnection>): void {
+  const mcp = createMcpServer(sessions)
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>()
 
   // MCP endpoint - maintains session state
@@ -580,7 +304,13 @@ function setupMcpRoutes(app: Express, logger: Logger): void {
     } else {
       // Create new transport for new session
       transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
+        sessionIdGenerator: () => {
+          const id = crypto.randomUUID()
+          // Store transport immediately after ID generation to prevent leak
+          mcpTransports.set(id, transport)
+          logger.log(`MCP session created: ${id}`)
+          return id
+        },
       })
 
       // Connect MCP server to this transport
@@ -592,7 +322,6 @@ function setupMcpRoutes(app: Express, logger: Logger): void {
         return
       }
 
-      // Store transport after connection (session ID is generated during handleRequest)
       transport.onclose = () => {
         // Find and remove this transport from the map
         for (const [id, t] of mcpTransports.entries()) {
@@ -607,13 +336,6 @@ function setupMcpRoutes(app: Express, logger: Logger): void {
 
     try {
       await transport.handleRequest(req, res, req.body)
-
-      // After first request, store transport with its session ID
-      const responseSessionId = res.getHeader('mcp-session-id') as string
-      if (responseSessionId && !mcpTransports.has(responseSessionId)) {
-        mcpTransports.set(responseSessionId, transport)
-        logger.log(`MCP session created: ${responseSessionId}`)
-      }
     } catch (error) {
       logger.error('MCP request error:', error)
       if (!res.headersSent) {
@@ -626,13 +348,154 @@ function setupMcpRoutes(app: Express, logger: Logger): void {
   app.get('/mcp/info', (_req: Request, res: Response) => {
     res.json({
       name: 'ai-annotator',
-      version: '1.0.0',
+      version: getVersion(),
       capabilities: {
         tools: true,
       },
       endpoint: '/mcp',
     })
   })
+}
+
+// REST API routes - plain HTTP endpoints for any client
+function setupRestApiRoutes(app: Express, logger: Logger, sessions: Map<string, BrowserConnection>): void {
+  // Helper: resolve connection or send error response
+  function withConn(res: Response, sessionId?: string): AnnotatorConnection | null {
+    const result = getRpcOrError(sessions, sessionId)
+    if ('error' in result) {
+      res.status(400).json({ error: result.error })
+      return null
+    }
+    return createAnnotatorConnection(result.rpc, result.sessionId)
+  }
+
+  // GET /api/sessions - List all connected browser sessions
+  app.get('/api/sessions', (_req: Request, res: Response) => {
+    res.json(getAllSessionsList(sessions))
+  })
+
+  // GET /api/sessions/:id/page-context
+  app.get('/api/sessions/:id/page-context', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    try {
+      const result = await conn.getPageContext(10000)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // POST /api/sessions/:id/select
+  // Body: { mode?: "inspect"|"selector", selector?: string, selectorType?: "css"|"xpath" }
+  app.post('/api/sessions/:id/select', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    const { mode = 'inspect', selector, selectorType = 'css' } = req.body || {}
+    try {
+      const result = await conn.triggerSelection(mode, selector, selectorType, 10000)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // GET /api/sessions/:id/feedback?fields=xpath,attributes,styles,children
+  app.get('/api/sessions/:id/feedback', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    try {
+      const result = await conn.getSelectedElements(15000)
+      if (Array.isArray(result) && result.length === 0) {
+        res.json([])
+        return
+      }
+      const fieldsParam = req.query.fields as string | undefined
+      const fields = fieldsParam?.split(',').filter(Boolean) as FeedbackField[] | undefined
+      const filtered = filterFeedbackFields(result as unknown as Record<string, unknown>[], fields)
+      res.json(filtered)
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // DELETE /api/sessions/:id/feedback
+  app.delete('/api/sessions/:id/feedback', (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    conn.clearSelection()
+    res.json({ success: true })
+  })
+
+  // POST /api/sessions/:id/screenshot
+  // Body: { type?: "viewport"|"element", selector?: string, quality?: number }
+  app.post('/api/sessions/:id/screenshot', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    const { type = 'viewport', selector, quality = 0.7 } = req.body || {}
+    try {
+      const result = await conn.captureScreenshot(type, selector, quality, 30000)
+      if ('success' in result && result.success && 'base64' in result && result.base64) {
+        const filePath = saveScreenshot(result.base64 as string)
+        res.json({ success: true, filePath })
+      } else {
+        res.json(result)
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // POST /api/sessions/:id/inject-css
+  // Body: { css: string }
+  app.post('/api/sessions/:id/inject-css', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    const { css } = req.body || {}
+    if (!css) {
+      res.status(400).json({ error: 'css field is required' })
+      return
+    }
+    try {
+      const result = await conn.injectCSS(css, 10000)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // POST /api/sessions/:id/inject-js
+  // Body: { code: string }
+  app.post('/api/sessions/:id/inject-js', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    const { code } = req.body || {}
+    if (!code) {
+      res.status(400).json({ error: 'code field is required' })
+      return
+    }
+    try {
+      const result = await conn.injectJS(code, 15000)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  // GET /api/sessions/:id/console?clear=true
+  app.get('/api/sessions/:id/console', async (req: Request, res: Response) => {
+    const conn = withConn(res, req.params.id)
+    if (!conn) return
+    const clear = req.query.clear === 'true'
+    try {
+      const result = await conn.getConsole(clear, 15000)
+      res.json(result)
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  logger.log('REST API routes registered at /api/*')
 }
 
 export async function startServer(
@@ -643,6 +506,7 @@ export async function startServer(
 ): Promise<ServerInstance> {
   const logger = createLogger(verbose)
   const app = express()
+  const sessions = new Map<string, BrowserConnection>()
 
   app.use(cors({
     origin: '*',
@@ -652,8 +516,9 @@ export async function startServer(
 
   app.use(express.json({ limit: '10mb' }))
 
-  setupRoutes(app, publicAddress, verbose)
-  setupMcpRoutes(app, logger)
+  setupRoutes(app, publicAddress, verbose, sessions)
+  setupRestApiRoutes(app, logger, sessions)
+  setupMcpRoutes(app, logger, sessions)
 
   const server = await listen(app, port, listenAddress)
 
@@ -666,19 +531,23 @@ export async function startServer(
     maxHttpBufferSize: 50e6, // 50MB for large screenshots
   })
 
-  setupSocketIO(io, logger)
+  setupSocketIO(io, logger, sessions)
 
-  return { app, server, io, port, listenAddress, publicAddress, verbose }
+  return {
+    app,
+    server,
+    io,
+    port,
+    listenAddress,
+    publicAddress,
+    verbose,
+    getAllSessions: () => getAllSessionsList(sessions),
+    getRpc: (sessionId?: string) => getRpcFromSessions(sessions, sessionId),
+  }
 }
 
 export async function stopServer(serverInstance: ServerInstance): Promise<void> {
   return new Promise((resolve) => {
-    // Dispose all RPC instances and close connections
-    sessions.forEach(({ rpc }) => {
-      rpc.dispose()
-    })
-    sessions.clear()
-
     // Socket.IO's close() handles closing the underlying HTTP server
     serverInstance.io.close(() => {
       resolve()

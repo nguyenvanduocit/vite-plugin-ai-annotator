@@ -40,6 +40,7 @@ interface TooltipState {
 export class AnnotatorToolbar extends LitElement {
   @property({ attribute: 'ws-endpoint' }) wsEndpoint = 'http://localhost:7318'
   @property({ attribute: 'verbose', type: Boolean }) verbose = false
+  @property({ attribute: 'demo', type: Boolean }) demo = false
 
   @state() private connected = false
   @state() private sessionId = ''
@@ -331,8 +332,12 @@ export class AnnotatorToolbar extends LitElement {
   connectedCallback() {
     super.connectedCallback()
     this.initializeManagers()
-    this.initializeConsoleCapture()
-    this.connectToServer()
+    if (this.demo) {
+      this.connected = true
+    } else {
+      this.initializeConsoleCapture()
+      this.connectToServer()
+    }
   }
 
   disconnectedCallback() {
@@ -453,74 +458,28 @@ export class AnnotatorToolbar extends LitElement {
     })
   }
 
+  private wrapRpcHandler<T extends (...args: any[]) => any>(name: string, handler: T): T {
+    return (async (...args: any[]) => {
+      try { return await handler(...args) }
+      catch (error) {
+        this.log(`[${name}] Handler error:`, error)
+        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
+      }
+    }) as unknown as T
+  }
+
   private registerRpcHandlers() {
     if (!this.rpc) return
 
-    this.rpc.handle.getPageContext(async () => {
-      try { return await this.getPageContext() }
-      catch (error) {
-        this.log('[getPageContext] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
-    this.rpc.handle.getSelectedElements(async () => {
-      try { return await this.getSelectedElements() }
-      catch (error) {
-        this.log('[getSelectedElements] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
-    this.rpc.handle.triggerSelection(async (mode, selector, selectorType) => {
-      try { return await this.triggerSelection(mode, selector, selectorType) }
-      catch (error) {
-        this.log('[triggerSelection] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
-    this.rpc.handle.captureScreenshot(async (type, selector, quality) => {
-      try { return await this.captureScreenshot(type, selector, quality) }
-      catch (error) {
-        this.log('[captureScreenshot] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
-    this.rpc.handle.clearSelection(async () => {
-      try { return await this.clearSelection() }
-      catch (error) {
-        this.log('[clearSelection] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
+    this.rpc.handle.getPageContext(this.wrapRpcHandler('getPageContext', async () => this.getPageContext()))
+    this.rpc.handle.getSelectedElements(this.wrapRpcHandler('getSelectedElements', async () => this.getSelectedElements()))
+    this.rpc.handle.triggerSelection(this.wrapRpcHandler('triggerSelection', async (mode, selector, selectorType) => this.triggerSelection(mode, selector, selectorType)))
+    this.rpc.handle.captureScreenshot(this.wrapRpcHandler('captureScreenshot', async (type, selector, quality) => this.captureScreenshot(type, selector, quality)))
+    this.rpc.handle.clearSelection(this.wrapRpcHandler('clearSelection', async () => this.clearSelection()))
     this.rpc.handle.ping(async () => 'pong')
-
-    this.rpc.handle.injectCSS(async (css) => {
-      try { return await this.injectCSS(css) }
-      catch (error) {
-        this.log('[injectCSS] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
-    this.rpc.handle.injectJS(async (code) => {
-      try { return await this.injectJS(code) }
-      catch (error) {
-        this.log('[injectJS] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
-
-    this.rpc.handle.getConsole(async (clear) => {
-      try { return await this.getConsoleLogs(clear) }
-      catch (error) {
-        this.log('[getConsole] Handler error:', error)
-        throw { message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined } as const
-      }
-    })
+    this.rpc.handle.injectCSS(this.wrapRpcHandler('injectCSS', async (css) => this.injectCSS(css)))
+    this.rpc.handle.injectJS(this.wrapRpcHandler('injectJS', async (code) => this.injectJS(code)))
+    this.rpc.handle.getConsole(this.wrapRpcHandler('getConsole', async (clear) => this.getConsoleLogs(clear)))
   }
   private reportPageContext() {
     if (!this.socket?.connected) return
@@ -913,11 +872,6 @@ export class AnnotatorToolbar extends LitElement {
       this.popoverCleanup = null
     }
 
-    // Remove focus trap listener
-    const popoverEl = this.shadowRoot?.querySelector('.popover')
-    if (popoverEl) {
-    }
-
     this.commentPopover = { visible: false, element: null, comment: '' }
   }
 
@@ -1125,6 +1079,10 @@ export class AnnotatorToolbar extends LitElement {
 
   private async copySessionId() {
     this.exitInspectingMode()
+    if (this.demo) {
+      this.showToast('Demo mode — no server')
+      return
+    }
     if (!this.sessionId) {
       this.showToast('No session ID')
       return

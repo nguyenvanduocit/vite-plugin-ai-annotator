@@ -1,6 +1,6 @@
 # vite-plugin-ai-annotator
 
-AI-powered browser element annotator for Vite. Users select UI elements in the browser, add feedback comments, and AI tools (Claude Code, Cursor, VS Code) receive structured element data via MCP.
+AI-powered browser element annotator for Vite. Users select UI elements in the browser, add feedback comments, and AI tools (Claude Code, Cursor, VS Code) receive structured element data via MCP or REST API.
 
 ## Commands
 
@@ -28,13 +28,19 @@ npm version patch --no-git-tag-version && npm publish
 ```
 src/
   index.ts               CLI entry. Subcommands: (default)=server, "mcp"=stdio MCP
-  ws-server.ts           Express + Socket.IO server. Two MCP transports:
+  ws-server.ts           Express + Socket.IO server. Three access layers:
+                           - REST API at /api/* for any HTTP client
                            - Socket.IO events (mcp:* prefix) for stdio MCP client
                            - HTTP StreamableHTTPServerTransport at /mcp endpoint
   mcp-stdio.ts           Stdio MCP server. Connects to ws-server via Socket.IO as clientType=mcp
   vite-plugin.ts         Vite plugin. Spawns server as child process, injects toolbar script
                            into HTML (SPA via transformIndexHtml, SSR via middleware interception)
   auto-setup-mcp.ts      Writes MCP config to .mcp.json, .cursor/mcp.json, .vscode/mcp.json
+  auto-setup-skills.ts   Writes AI tool instruction files with server address:
+                           - CLAUDE.md (marker-delimited section for Claude Code)
+                           - .cursor/rules/ai-annotator.mdc (alwaysApply for Cursor)
+                           - AGENTS.md (marker-delimited section for Codex)
+                           - .github/copilot-instructions.md (for Copilot)
   annotator-toolbar.ts   Lit web component (<annotator-toolbar>). Shadow DOM, cyberpunk UI
   annotator/
     selection.ts         Element selection manager (badges, overlays, text wrapping)
@@ -74,6 +80,53 @@ Generated files (`*.generated.ts`) must not be edited manually. Regenerate with 
 
 All tools accept optional `sessionId` (auto-selects when only one browser session):
 `annotator_list_sessions`, `annotator_get_page_context`, `annotator_select_feedback`, `annotator_get_feedback`, `annotator_capture_screenshot`, `annotator_clear_feedback`, `annotator_inject_css`, `annotator_inject_js`, `annotator_get_console`
+
+## REST API
+
+All endpoints under `/api/`. Session ID required in path (use `GET /api/sessions` to discover):
+
+| Method | Endpoint | Body/Query | Description |
+|--------|----------|------------|-------------|
+| `GET` | `/api/sessions` | — | List connected browser sessions |
+| `GET` | `/api/sessions/:id/page-context` | — | Page URL, title, selection count |
+| `POST` | `/api/sessions/:id/select` | `{mode?, selector?, selectorType?}` | Trigger feedback selection |
+| `GET` | `/api/sessions/:id/feedback` | `?fields=xpath,attributes,styles,children` | Get selected feedback items |
+| `DELETE` | `/api/sessions/:id/feedback` | — | Clear all selections |
+| `POST` | `/api/sessions/:id/screenshot` | `{type?, selector?, quality?}` | Capture screenshot, returns file path |
+| `POST` | `/api/sessions/:id/inject-css` | `{css}` | Inject CSS into page |
+| `POST` | `/api/sessions/:id/inject-js` | `{code}` | Execute JS in page context |
+| `GET` | `/api/sessions/:id/console` | `?clear=true` | Get captured console logs |
+
+## Auto-inject Feedback via Hook
+
+Add a `UserPromptSubmit` hook to `.claude/settings.json` so every user message automatically fetches current feedback, injects it into context, and clears it:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'PORT=${AI_ANNOTATOR_PORT:-7318}; SESSIONS=$(curl -sf http://localhost:$PORT/api/sessions); [ -z \"$SESSIONS\" ] || [ \"$SESSIONS\" = \"[]\" ] && exit 0; echo \"$SESSIONS\" | python3 -c \"import sys,json; [print(s[\\\"id\\\"])for s in json.load(sys.stdin)]\" | while read -r SID; do FB=$(curl -sf http://localhost:$PORT/api/sessions/$SID/feedback?fields=xpath,attributes); if [ -n \"$FB\" ] && [ \"$FB\" != \"[]\" ]; then PAGE=$(curl -sf http://localhost:$PORT/api/sessions/$SID/page-context); echo \"[AI Annotator Feedback] Session: $SID\"; echo \"Page: $PAGE\"; echo \"Feedback: $FB\"; curl -sf -X DELETE http://localhost:$PORT/api/sessions/$SID/feedback > /dev/null; fi; done'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+How it works:
+1. On every user message, the hook queries `GET /api/sessions`
+2. For each session with feedback, it fetches `GET /api/sessions/:id/feedback` and `page-context`
+3. Output is injected as additional context into the prompt
+4. Feedback is cleared via `DELETE /api/sessions/:id/feedback`
+5. If no sessions or no feedback, the hook exits silently (exit 0)
+
+Set `AI_ANNOTATOR_PORT` env var if using a non-default port.
 
 ## Gotchas
 

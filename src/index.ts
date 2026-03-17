@@ -2,31 +2,7 @@
 
 import { startServer, stopServer, type ServerInstance } from './ws-server'
 import { createServer } from 'net'
-import { readFileSync, existsSync } from 'fs'
-import { join } from 'path'
-
-// Read version from package.json
-function getVersion(): string {
-  const possiblePaths = [
-    join(__dirname, '..', 'package.json'),
-    join(__dirname, 'package.json'),
-    join(process.cwd(), 'package.json'),
-  ]
-
-  for (const pkgPath of possiblePaths) {
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
-        if (pkg.name === 'vite-plugin-ai-annotator' && pkg.version) {
-          return pkg.version
-        }
-      } catch {
-        continue
-      }
-    }
-  }
-  return '0.0.0'
-}
+import { getVersion } from './utils/version'
 
 const VERSION = getVersion()
 const args = process.argv.slice(2)

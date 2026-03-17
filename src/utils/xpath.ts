@@ -120,13 +120,6 @@ export class XPathUtils {
   }
 
   /**
-   * Generate optimized CSS selector using optimal-select library
-   */
-  static generateOptimalSelector(element: Element): string {
-    return this.generateEnhancedCSSSelector(element)
-  }
-
-  /**
    * Generate enhanced CSS selector optimized for browser environment
    */
   static generateEnhancedCSSSelector(element: Element): string {
@@ -228,7 +221,7 @@ export class XPathUtils {
    */
   static generateElementSelector(element: Element): ElementSelector {
     const xpath = this.generateXPath(element)
-    const cssSelector = this.generateOptimalSelector(element)
+    const cssSelector = this.generateEnhancedCSSSelector(element)
 
     // Get position information
     const siblings = Array.from(element.parentElement?.children || [])
@@ -287,17 +280,6 @@ export class XPathUtils {
 
     if (element.getAttribute('aria-label')) {
       fallbacks.push(`[aria-label="${element.getAttribute('aria-label')}"]`)
-    }
-
-    // Add text-based selector if element has unique text
-    const textContent = element.textContent?.trim()
-    if (textContent && textContent.length > 0 && textContent.length < 50) {
-      const elementsWithSameText = Array.from(document.querySelectorAll('*'))
-        .filter(el => el.textContent?.trim() === textContent)
-
-      if (elementsWithSameText.length === 1) {
-        fallbacks.push(`${element.tagName.toLowerCase()}:contains("${textContent}")`)
-      }
     }
 
     // Determine confidence level

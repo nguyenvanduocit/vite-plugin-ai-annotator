@@ -159,7 +159,8 @@ export function findNearestComponent(element: Element, verbose = false): Compone
       return componentInfo
     }
 
-    return findNearestComponent(element.parentElement!, verbose)
+    if (!element.parentElement) return null
+    return findNearestComponent(element.parentElement, verbose)
   } catch (e) {
     logger.error('Error finding nearest component:', e)
     return null
@@ -506,7 +507,7 @@ function extractVueElementLocation(element: Element, vnode: VueVNode | null): Pa
     // Try to get element-specific location from Vue devtools data
     if (vnode?.loc) {
       locationInfo.elementLocation = {
-        file: vnode.loc.source || '',
+        file: '',
         line: vnode.loc.start?.line || 0,
         column: vnode.loc.start?.column || 0,
         endLine: vnode.loc.end?.line,

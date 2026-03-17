@@ -1,4 +1,4 @@
-import { defineNuxtModule, addVitePlugin, addWebpackPlugin } from '@nuxt/kit';
+import { defineNuxtModule, addVitePlugin } from '@nuxt/kit';
 import type { Nuxt } from '@nuxt/schema';
 import { aiAnnotator, type AiAnnotatorOptions } from './vite-plugin';
 
@@ -27,9 +27,6 @@ export default defineNuxtModule<NuxtAiAnnotatorOptions>({
 
     // Add Vite plugin
     addVitePlugin(aiAnnotator(options));
-
-    // Also add Webpack plugin for compatibility (Nuxt uses Vite by default)
-    addWebpackPlugin(aiAnnotator(options));
 
     console.log('[ai-annotator] Nuxt module initialized');
   },
