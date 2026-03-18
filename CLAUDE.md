@@ -1,6 +1,6 @@
 # vite-plugin-ai-annotator
 
-AI-powered browser element annotator for Vite. Users select UI elements in the browser, add feedback comments, and AI tools (Claude Code, Cursor, VS Code) receive structured element data via MCP or REST API.
+AI-powered browser element annotator for Vite. Users select UI elements in the browser, add feedback comments, and AI tools (Claude Code, Cursor, VS Code) receive structured element data via REST API and auto-setup skills.
 
 ## Commands
 
@@ -27,15 +27,12 @@ npm version patch --no-git-tag-version && npm publish
 
 ```
 src/
-  index.ts               CLI entry. Subcommands: (default)=server, "mcp"=stdio MCP
-  ws-server.ts           Express + Socket.IO server. Three access layers:
+  index.ts               CLI entry. Starts the server
+  ws-server.ts           Express + Socket.IO server. Two access layers:
                            - REST API at /api/* for any HTTP client
-                           - Socket.IO events (mcp:* prefix) for stdio MCP client
-                           - HTTP StreamableHTTPServerTransport at /mcp endpoint
-  mcp-stdio.ts           Stdio MCP server. Connects to ws-server via Socket.IO as clientType=mcp
+                           - Socket.IO for browser toolbar communication
   vite-plugin.ts         Vite plugin. Spawns server as child process, injects toolbar script
                            into HTML (SPA via transformIndexHtml, SSR via middleware interception)
-  auto-setup-mcp.ts      Writes MCP config to .mcp.json, .cursor/mcp.json, .vscode/mcp.json
   auto-setup-skills.ts   Writes AI tool skill/instruction files with server address:
                            - .claude/skills/ai-annotator/SKILL.md (Claude Code)
                            - .cursor/rules/ai-annotator.mdc (Cursor, alwaysApply)
@@ -73,15 +70,10 @@ Type generation runs twice: `tsconfig.json` (main, module=commonjs, excludes `vi
 ## RPC System
 
 `src/rpc/define.ts` is the source of truth:
-- **ServerFunctions**: `getSessions`, `ping` - called by MCP clients
+- **ServerFunctions**: `getSessions`, `ping` - called by browser clients
 - **ClientFunctions**: `getPageContext`, `getSelectedElements`, `triggerSelection`, `captureScreenshot`, `clearSelection`, `injectCSS`, `injectJS`, `getConsole`, `ping` - called on browser
 
 Generated files (`*.generated.ts`) must not be edited manually. Regenerate with `socketrpc-gen` after changing `define.ts`.
-
-## MCP Tools
-
-All tools accept optional `sessionId` (auto-selects when only one browser session):
-`annotator_list_sessions`, `annotator_get_page_context`, `annotator_select_feedback`, `annotator_get_feedback`, `annotator_capture_screenshot`, `annotator_clear_feedback`, `annotator_inject_css`, `annotator_inject_js`, `annotator_get_console`
 
 ## REST API
 
@@ -151,4 +143,4 @@ feat(plugin): add new feature
 fix(server): handle disconnection
 ```
 
-Scopes: `plugin`, `server`, `toolbar`, `build`, `rpc`, `mcp`
+Scopes: `plugin`, `server`, `toolbar`, `build`, `rpc`

@@ -147,9 +147,10 @@ description: This skill should be used when the user asks to "check browser feed
 ${body}
 `, verbose));
 
-  // 2. Cursor — .cursor/rules/ai-annotator.mdc
-  const cursorRule = join(projectRoot, '.cursor', 'rules', 'ai-annotator.mdc');
-  track(result, cursorRule, writeIfChanged(cursorRule, `---
+  // 2. Cursor — .cursor/rules/ai-annotator.mdc (only if .cursor/ exists)
+  if (existsSync(join(projectRoot, '.cursor'))) {
+    const cursorRule = join(projectRoot, '.cursor', 'rules', 'ai-annotator.mdc');
+    track(result, cursorRule, writeIfChanged(cursorRule, `---
 description: AI Annotator - interact with user's live browser session for UI feedback
 globs:
 alwaysApply: true
@@ -157,33 +158,42 @@ alwaysApply: true
 
 ${body}
 `, verbose));
+  }
 
-  // 3. Windsurf — .windsurf/rules/ai-annotator.md
-  const windsurfRule = join(projectRoot, '.windsurf', 'rules', 'ai-annotator.md');
-  track(result, windsurfRule, writeIfChanged(windsurfRule, `---
+  // 3. Windsurf — .windsurf/rules/ai-annotator.md (only if .windsurf/ exists)
+  if (existsSync(join(projectRoot, '.windsurf'))) {
+    const windsurfRule = join(projectRoot, '.windsurf', 'rules', 'ai-annotator.md');
+    track(result, windsurfRule, writeIfChanged(windsurfRule, `---
 trigger: always_on
 ---
 
 ${body}
 `, verbose));
+  }
 
-  // 4. Codex — AGENTS.md (marker-delimited)
+  // 4. Codex — AGENTS.md (marker-delimited, only if AGENTS.md already exists)
   const agentsMd = join(projectRoot, 'AGENTS.md');
-  track(result, agentsMd, updateMarkerSection(agentsMd, body, verbose));
+  if (existsSync(agentsMd)) {
+    track(result, agentsMd, updateMarkerSection(agentsMd, body, verbose));
+  }
 
-  // 5. Copilot — .github/instructions/ai-annotator.instructions.md
-  const copilotInstructions = join(projectRoot, '.github', 'instructions', 'ai-annotator.instructions.md');
-  track(result, copilotInstructions, writeIfChanged(copilotInstructions, `---
+  // 5. Copilot — .github/instructions/ai-annotator.instructions.md (only if .github/ exists)
+  if (existsSync(join(projectRoot, '.github'))) {
+    const copilotInstructions = join(projectRoot, '.github', 'instructions', 'ai-annotator.instructions.md');
+    track(result, copilotInstructions, writeIfChanged(copilotInstructions, `---
 applyTo: "**"
 ---
 
 ${body}
 `, verbose));
+  }
 
-  // 6. Cline — .clinerules/ai-annotator.md
-  const clineRule = join(projectRoot, '.clinerules', 'ai-annotator.md');
-  track(result, clineRule, writeIfChanged(clineRule, `${body}
+  // 6. Cline — .clinerules/ai-annotator.md (only if .clinerules/ exists)
+  if (existsSync(join(projectRoot, '.clinerules'))) {
+    const clineRule = join(projectRoot, '.clinerules', 'ai-annotator.md');
+    track(result, clineRule, writeIfChanged(clineRule, `${body}
 `, verbose));
+  }
 
   return result;
 }
