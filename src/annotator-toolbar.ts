@@ -613,7 +613,7 @@ export class AnnotatorToolbar extends LitElement {
         // Filter out all annotator UI elements
         filter: (node) => {
           if (node instanceof Element) {
-            const className = typeof node.className === 'string' ? node.className : (node.className?.baseVal || '')
+            const className = typeof node.className === 'string' ? node.className : ((node.className as unknown as SVGAnimatedString)?.baseVal || '')
             const tagName = node.tagName?.toLowerCase() || ''
 
             // Skip all annotator elements
