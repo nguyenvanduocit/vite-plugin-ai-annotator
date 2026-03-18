@@ -9,7 +9,7 @@
  */
 
 import { LitElement, html, css } from 'lit'
-import { customElement, property, state } from 'lit/decorators.js'
+import { property, state } from 'lit/decorators.js'
 import { io, Socket } from 'socket.io-client'
 import { toBlob } from 'html-to-image'
 import { computePosition, offset, flip, shift, autoUpdate } from '@floating-ui/dom'
@@ -36,7 +36,6 @@ interface TooltipState {
   y: number
 }
 
-@customElement('annotator-toolbar')
 export class AnnotatorToolbar extends LitElement {
   @property({ attribute: 'ws-endpoint' }) wsEndpoint = 'http://localhost:7318'
   @property({ attribute: 'verbose', type: Boolean }) verbose = false
@@ -64,8 +63,6 @@ export class AnnotatorToolbar extends LitElement {
   private originalConsoleMethods: Partial<Record<keyof Console, (...args: unknown[]) => void>> = {}
 
   static styles = css`
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-
     :host {
       --cyber-pink: #FF00FF;
       --cyber-cyan: #00FFFF;
@@ -331,6 +328,13 @@ export class AnnotatorToolbar extends LitElement {
 
   connectedCallback() {
     super.connectedCallback()
+    // Load Google Fonts via <link> since @import is not supported in constructable stylesheets
+    if (!document.querySelector('link[href*="JetBrains+Mono"]')) {
+      const link = document.createElement('link')
+      link.rel = 'stylesheet'
+      link.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap'
+      document.head.appendChild(link)
+    }
     this.initializeManagers()
     if (this.demo) {
       this.connected = true
@@ -609,7 +613,7 @@ export class AnnotatorToolbar extends LitElement {
         // Filter out all annotator UI elements
         filter: (node) => {
           if (node instanceof Element) {
-            const className = node.className || ''
+            const className = typeof node.className === 'string' ? node.className : (node.className?.baseVal || '')
             const tagName = node.tagName?.toLowerCase() || ''
 
             // Skip all annotator elements
@@ -965,8 +969,11 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
 
-    const sessionPart = this.sessionId ? ` (session: ${this.sessionId})` : ''
-    const text = `I have selected ${elements.length} feedback item(s) in the browser${sessionPart}. Use the \`annotator_get_feedback\` tool to retrieve them and modify the code.`
+    if (!this.sessionId) {
+      this.showToast('No session ID')
+      return
+    }
+    const text = `I have selected ${elements.length} feedback item(s) in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback and modify the code accordingly.`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast(`Copied ${elements.length} element(s)`)
@@ -1087,7 +1094,7 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No session ID')
       return
     }
-    const text = `I have feedback in the browser (session: ${this.sessionId}). Use the \`annotator_get_feedback\` tool to retrieve them.`
+    const text = `I have feedback in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback`
     try {
       await navigator.clipboard.writeText(text)
       this.showToast('Copied!')
@@ -1203,6 +1210,11 @@ export class AnnotatorToolbar extends LitElement {
       ` : ''}
     `
   }
+}
+
+// Guard against double registration when script is loaded multiple times
+if (!customElements.get('annotator-toolbar')) {
+  customElements.define('annotator-toolbar', AnnotatorToolbar)
 }
 
 declare global {
