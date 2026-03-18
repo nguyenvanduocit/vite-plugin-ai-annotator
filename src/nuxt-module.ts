@@ -17,7 +17,6 @@ export default defineNuxtModule<NuxtAiAnnotatorOptions>({
     listenAddress: '127.0.0.1',
     verbose: false,
     injectSourceLoc: true,
-    autoSetupMcp: false,
   },
   setup(options: NuxtAiAnnotatorOptions, nuxt: Nuxt) {
     // Only enable in development mode

@@ -6,23 +6,13 @@ import { getVersion } from './utils/version'
 
 const VERSION = getVersion()
 const args = process.argv.slice(2)
-const subcommand = args[0]
 
-// Handle 'mcp' subcommand - delegate to mcp-stdio
-if (subcommand === 'mcp') {
-  import('./mcp-stdio').catch((err) => {
-    console.error('Failed to start MCP CLI:', err)
-    process.exit(1)
-  })
-} else {
-  runServer()
-}
+runServer()
 
 async function runServer() {
   const helpFlag = args.includes('--help') || args.includes('-h')
   const versionFlag = args.includes('--version') || args.includes('-v')
   const verboseFlag = args.includes('--verbose') || args.includes('-V')
-  const skipMcpInstructions = args.includes('--skip-mcp-instructions')
   const portFlag = args.findIndex(arg => arg === '--port' || arg === '-p')
   const listenFlag = args.findIndex(arg => arg === '--listen' || arg === '-l')
   const publicAddressFlag = args.findIndex(arg => arg === '--public-address' || arg === '-a')
@@ -32,14 +22,7 @@ async function runServer() {
 AI Annotator - AI-powered web inspection tool
 
 Usage:
-  bunx vite-plugin-ai-annotator [command] [options]
-
-Commands:
-  mcp --server <url>            Run as MCP stdio server (for Claude Code)
-  (default)                     Start the WebSocket server
-
-MCP Options:
-  -s, --server <url>            Server URL (REQUIRED)
+  bunx vite-plugin-ai-annotator [options]
 
 Server Options:
   -p, --port <number>           Port to run the server on (default: 7318)
@@ -50,17 +33,10 @@ Server Options:
   -v, --version                 Show version number
 
 Examples:
-  bunx vite-plugin-ai-annotator                               # Start server
-  bunx vite-plugin-ai-annotator --port 8080                   # Start on port 8080
-  bunx vite-plugin-ai-annotator mcp -s http://localhost:7318  # Run MCP stdio
+  bunx vite-plugin-ai-annotator                  # Start server
+  bunx vite-plugin-ai-annotator --port 8080      # Start on port 8080
 
-Claude Code MCP Config (~/.claude/settings.json):
-  "mcpServers": {
-    "ai-annotator": {
-      "command": "bunx",
-      "args": ["vite-plugin-ai-annotator", "mcp", "-s", "http://localhost:7318"]
-    }
-  }
+REST API available at http://localhost:7318/api/
 
 Learn more: https://github.com/nguyenvanduocit/instantCode
 `)
@@ -135,17 +111,7 @@ Learn more: https://github.com/nguyenvanduocit/instantCode
 
     console.log(`✅ AI Annotator server started on ${publicAddress}`)
 
-    if (!skipMcpInstructions) {
-      console.log(``)
-      console.log(`📋 Claude Code MCP Config (~/.claude/settings.json):`)
-      console.log(``)
-      console.log(`  "mcpServers": {`)
-      console.log(`    "ai-annotator": {`)
-      console.log(`      "command": "bunx",`)
-      console.log(`      "args": ["vite-plugin-ai-annotator", "mcp", "-s", "${publicAddress}"]`)
-      console.log(`    }`)
-      console.log(`  }`)
-    }
+    console.log(`📋 REST API: ${publicAddress}/api/`)
   } catch (error) {
     console.error('❌ Failed to start server:', error instanceof Error ? error.message : error)
     process.exit(1)
