@@ -1055,6 +1055,12 @@ export class AnnotatorToolbar extends LitElement {
     </svg>`
   }
 
+  private renderSendIcon() {
+    return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+    </svg>`
+  }
+
   private showToast(message: string) {
     if (this.toastTimeout) {
       clearTimeout(this.toastTimeout)
@@ -1190,12 +1196,12 @@ export class AnnotatorToolbar extends LitElement {
         <button
           class="toolbar-btn"
           @click=${this.copySessionId}
-          @mouseenter=${(e: MouseEvent) => this.showTooltip('Copy session', e.currentTarget as HTMLElement)}
+          @mouseenter=${(e: MouseEvent) => this.showTooltip('Send to Claude', e.currentTarget as HTMLElement)}
           @mouseleave=${() => this.hideTooltip()}
-          aria-label="Copy session ID to clipboard"
-          title="Copy session"
+          aria-label="Send selections to Claude Code"
+          title="Send to Claude"
         >
-          ${this.renderClipboardIcon()}
+          ${this.renderSendIcon()}
         </button>
 
         <button
