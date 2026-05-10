@@ -62,7 +62,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # npm CLI honors this env var when publishing — produces a SLSA
-          # provenance attestation visible on the npm package page. semantic-
-          # release/npm calls `npm publish` internally, so the flag flows through.
+          # provenance attestation visible on the npm package page.
           NPM_CONFIG_PROVENANCE: 'true'
+          # setup-node's registry-url writes an .npmrc that uses
+          # ${NODE_AUTH_TOKEN} for auth. When unset, setup-node injects a
+          # literal placeholder "XXXXX-XXXXX-XXXXX-XXXXX" which npm sends as
+          # a Bearer token and the registry rejects with 404, suppressing
+          # the OIDC trusted-publisher token exchange. Clearing it forces
+          # npm to fall through to OIDC.
+          NODE_AUTH_TOKEN: ''
         run: npx semantic-release
