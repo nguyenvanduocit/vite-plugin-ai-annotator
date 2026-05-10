@@ -131,19 +131,20 @@ export class XPathUtils {
 
       // Add ID if available and unique
       if (currentElement.id && this.isUniqueId(currentElement.id)) {
-        selector += `#${currentElement.id}`
+        selector += `#${CSS.escape(currentElement.id)}`
         parts.unshift(selector)
         break
       }
 
-      // Add meaningful classes
+      // Add meaningful classes (escape each — Tailwind arbitrary values like
+      // `bg-[#f7f5f0]` or `aspect-[920/744]` contain CSS-special chars)
       if (currentElement.className && typeof currentElement.className === 'string') {
-        const classes = currentElement.className.split(' ')
+        const classes = currentElement.className.split(/\s+/)
           .filter(c => c && !c.includes('css-') && !c.includes('emotion-'))
           .slice(0, 2) // Limit to avoid overly specific selectors
 
         if (classes.length > 0) {
-          selector += '.' + classes.join('.')
+          selector += '.' + classes.map(c => CSS.escape(c)).join('.')
         }
       }
 
@@ -270,7 +271,7 @@ export class XPathUtils {
 
     // Add fallback strategies
     if (element.id && this.isUniqueId(element.id)) {
-      fallbacks.push(`#${element.id}`)
+      fallbacks.push(`#${CSS.escape(element.id)}`)
     }
 
     // Add attribute-based selectors
