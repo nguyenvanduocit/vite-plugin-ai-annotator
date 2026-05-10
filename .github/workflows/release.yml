@@ -58,17 +58,31 @@ jobs:
       - name: Build
         run: bun run build
 
+      # semantic-release: analyze commits, bump version, write CHANGELOG,
+      # commit + tag + push, create GitHub Release. Does NOT publish to npm —
+      # that runs in the next step in workflow shell because the OIDC trusted-
+      # publisher exchange does not work reliably from a subprocess (proven
+      # empirically: identical setup-node + placeholder token works in a
+      # direct shell step but 404s when invoked via @semantic-release/exec).
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # npm CLI honors this env var when publishing — produces a SLSA
-          # provenance attestation visible on the npm package page.
-          NPM_CONFIG_PROVENANCE: 'true'
-          # setup-node's registry-url writes an .npmrc that uses
-          # ${NODE_AUTH_TOKEN} for auth. When unset, setup-node injects a
-          # literal placeholder "XXXXX-XXXXX-XXXXX-XXXXX" which npm sends as
-          # a Bearer token and the registry rejects with 404, suppressing
-          # the OIDC trusted-publisher token exchange. Clearing it forces
-          # npm to fall through to OIDC.
-          NODE_AUTH_TOKEN: ''
         run: npx semantic-release
+
+      # Mirrors the OLD release.yml's publish step that successfully shipped
+      # 1.16.2: same shell, same setup-node-provided env, same flags. The
+      # version-vs-published check makes this idempotent so reruns or no-op
+      # semantic-release passes don't try to republish the existing version.
+      - name: Publish to npm
+        if: success()
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: |
+          LOCAL=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view vite-plugin-ai-annotator version 2>/dev/null || echo "0.0.0")
+          if [ "$LOCAL" != "$PUBLISHED" ]; then
+            echo "Publishing $LOCAL (registry has $PUBLISHED)"
+            npm publish --provenance --access public
+          else
+            echo "Version $LOCAL already on npm, nothing to publish"
+          fi

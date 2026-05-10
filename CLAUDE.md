@@ -17,35 +17,43 @@ bun link && bun link vite-plugin-ai-annotator  # Local dev linking (run build fi
 
 ## Publish
 
-CI publishes to npm via OIDC Trusted Publishers — no `NPM_TOKEN` secret. Two ways:
+CI publishes to npm via OIDC Trusted Publishers — no `NPM_TOKEN` secret.
 
-**Option A — GitHub UI (workflow_dispatch):**
+**Auto-release on push to master (default):**
+
+The `Release` workflow runs on every push to `master`. `semantic-release` analyzes conventional-commit messages since the last tag, picks the bump (`feat:` → minor, `BREAKING CHANGE` → major, anything else conventional → patch), commits + tags + pushes, generates the GitHub Release, then a follow-up workflow step runs `npm publish --provenance --access public` in the workflow shell. The publish runs in the workflow shell deliberately — running it via `@semantic-release/exec` subprocess 404'd against the OIDC trusted-publisher endpoint, identical setup in a direct shell step works.
+
+**Manual override:**
 
 ```bash
-gh workflow run release.yml -f version_type=patch    # or minor / major
+gh workflow run release.yml             # re-trigger semantic-release on current master
 ```
 
-The `Release` workflow bumps the version, commits + tags, pushes, runs `npm publish --provenance`, and creates a GitHub Release.
+Use this when the auto-release run fails midway (e.g., commit + tag pushed but npm publish blew up). semantic-release sees the existing tag as baseline and resumes.
 
-**Option B — Local tag push:**
+**Manual local publish (last-resort fallback):**
 
 ```bash
 npm version patch -m "chore(release): %s"
 git push --follow-tags
 ```
 
-The `NPM Publish` workflow triggers on tag `v*`, builds, and publishes with provenance.
+`NPM Publish` workflow triggers on the `v*` tag and publishes with provenance. Requires 2FA OTP if you publish from a workstation directly.
 
-**One-time setup (must be done once on npmjs.com):**
+### ⚠ Commit-message gotcha: literal "BREAKING CHANGE"
+
+The `conventional-commits` parser detects `BREAKING CHANGE` in a commit body even without the strict `BREAKING CHANGE: <description>` footer format — `BREAKING CHANGE -> major` (with a dash) is enough to trigger a major bump. Never write the literal phrase "BREAKING CHANGE" in a commit message body unless you actually intend to declare a breaking change. To talk about it, paraphrase ("breaking-change marker", "the BC keyword", etc.).
+
+This bit us once already: the body of a `ci:` commit explaining release rules contained the literal text and shipped a `3.0.0` major bump.
+
+**One-time npm trusted-publisher setup (already configured):**
 
 1. https://www.npmjs.com/package/vite-plugin-ai-annotator/access → Trusted Publisher → Add
 2. Publisher: GitHub Actions · Org: `nguyenvanduocit` · Repo: `vite-plugin-ai-annotator`
-3. Workflow filename: `release.yml` (and add a second entry for `npm-publish.yml`)
+3. Workflow filename: `release.yml` (and a second entry for `npm-publish.yml`)
 4. Environment: leave blank
 
-Once configured, every CI publish exchanges GitHub's OIDC token for an npm publish token and emits a SLSA provenance attestation visible on the package page.
-
-> Manual `npm publish` from a workstation still works but requires 2FA OTP. Prefer CI.
+Each CI publish exchanges GitHub's OIDC token for an npm publish token and emits a SLSA provenance attestation visible on the package page.
 
 ## Architecture
 
