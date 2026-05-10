@@ -99,13 +99,25 @@ function getRpcFromSessions(sessions: Map<string, BrowserConnection>, sessionId?
 const CHANNEL_ROOM = 'channels'
 
 function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string, BrowserConnection>): void {
+  // Tracks how many Claude Code channel clients are currently connected so
+  // browsers can show/hide the "Send to Claude" affordance accordingly.
+  let channelClientCount = 0
+
+  const broadcastChannelStatus = () => {
+    for (const conn of sessions.values()) {
+      conn.socket.emit('channel:status', { listenerCount: channelClientCount })
+    }
+  }
+
   io.on('connection', (socket: Socket) => {
     // A connection identifying itself with role=channel is the Claude Code
     // channel MCP server, not a browser. It does not own a BrowserSession.
     const role = socket.handshake.query.role
     if (role === 'channel') {
       socket.join(CHANNEL_ROOM)
-      logger.log(`Channel client connected (sid: ${socket.id})`)
+      channelClientCount++
+      broadcastChannelStatus()
+      logger.log(`Channel client connected (sid: ${socket.id}, total: ${channelClientCount})`)
 
       socket.on('channel:notify', (payload: { sessionId?: string; message?: string; status?: string }) => {
         if (!payload?.sessionId || typeof payload.message !== 'string') return
@@ -118,7 +130,9 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
       })
 
       socket.on('disconnect', () => {
-        logger.log(`Channel client disconnected (sid: ${socket.id})`)
+        channelClientCount = Math.max(0, channelClientCount - 1)
+        broadcastChannelStatus()
+        logger.log(`Channel client disconnected (sid: ${socket.id}, total: ${channelClientCount})`)
       })
       return
     }
@@ -154,6 +168,10 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
 
     // Send session ID to browser
     socket.emit('connected', { sessionId })
+
+    // Tell the new browser the current channel listener count so it can decide
+    // whether to enable the "Send to Claude" button immediately on connect.
+    socket.emit('channel:status', { listenerCount: channelClientCount })
 
     // Update session info when browser reports page context
     socket.on('pageContextChanged', (context: { url: string; title: string }) => {

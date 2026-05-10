@@ -48,6 +48,9 @@ export class AnnotatorToolbar extends LitElement {
   @state() private commentPopover: PopoverState = { visible: false, element: null, comment: '' }
   @state() private tooltip: TooltipState = { visible: false, text: '', x: 0, y: 0 }
   @state() private toastMessage = ''
+  // Number of Claude Code channel clients currently connected to the server.
+  // > 0 enables the "Send to Claude" button; 0 disables it with a hint tooltip.
+  @state() private channelListenerCount = 0
   private popoverCleanup: (() => void) | null = null
   private tooltipCleanup: (() => void) | null = null
   private toastTimeout: ReturnType<typeof setTimeout> | null = null
@@ -470,6 +473,12 @@ export class AnnotatorToolbar extends LitElement {
         data.status === 'progress' ? '… ' :
         ''
       this.showToast(prefix + data.message)
+    })
+
+    // Server tells us how many Claude Code channel clients are listening so
+    // we can enable/disable the "Send to Claude" button.
+    this.socket.on('channel:status', (data: { listenerCount?: number }) => {
+      this.channelListenerCount = typeof data?.listenerCount === 'number' ? data.listenerCount : 0
     })
   }
 
@@ -986,20 +995,28 @@ export class AnnotatorToolbar extends LitElement {
     }
     const text = `I have selected ${elements.length} feedback item(s) in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback and modify the code accordingly.`
 
-    // Push event to any connected channel client (Claude Code session) so it
-    // shows up immediately without the user having to paste anything.
-    if (this.socket?.connected) {
-      this.socket.emit('feedback:submitted', { count: elements.length })
+    // Keyboard shortcut behavior: always copy text to clipboard; additionally
+    // push over the channel when a Claude listener is connected. Toast reflects
+    // exactly which actions ran so the user is never told "Sent to Claude"
+    // when no Claude was listening.
+    const willSend = this.socket?.connected && this.channelListenerCount > 0
+    if (willSend) {
+      this.socket!.emit('feedback:submitted', { count: elements.length })
     }
+
+    const successToast = willSend
+      ? `Sent ${elements.length} element(s) to Claude`
+      : `Copied ${elements.length} element(s)`
 
     try {
       await navigator.clipboard.writeText(text)
-      this.showToast(`Sent ${elements.length} element(s) to Claude`)
+      this.showToast(successToast)
       this.exitInspectingMode()
     } catch (error) {
-      // Clipboard failed but the channel push above still went out.
-      this.showToast(`Sent ${elements.length} element(s) to Claude`)
-      this.log('Clipboard copy failed (channel push still sent):', error)
+      // Clipboard failed. If we sent over the channel, that still happened —
+      // tell the user the truth either way.
+      this.showToast(willSend ? successToast : 'Failed to copy')
+      this.log('Clipboard copy failed:', error)
       this.exitInspectingMode()
     }
   }
@@ -1055,6 +1072,12 @@ export class AnnotatorToolbar extends LitElement {
     </svg>`
   }
 
+  private renderClipboardIcon() {
+    return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+    </svg>`
+  }
+
   private showToast(message: string) {
     if (this.toastTimeout) {
       clearTimeout(this.toastTimeout)
@@ -1104,7 +1127,15 @@ export class AnnotatorToolbar extends LitElement {
     this.tooltip = { visible: false, text: '', x: 0, y: 0 }
   }
 
-  private async copySessionId() {
+  // Builds the paste-prompt text that lets a Claude session fetch feedback
+  // via REST. Used by both the Copy button (clipboard) and is conceptually
+  // what the Send button replaces (channel push -> Claude already knows the
+  // session, no text needed).
+  private buildFeedbackPrompt(): string {
+    return `I have feedback in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback`
+  }
+
+  private async copyFeedbackToClipboard() {
     this.exitInspectingMode()
     if (this.demo) {
       this.showToast('Demo mode — no server')
@@ -1114,22 +1145,40 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No session ID')
       return
     }
-    const text = `I have feedback in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback`
-
-    // Notify any connected channel client (Claude Code session). Count is
-    // unknown at this entry point; 0 means "I don't know, just check".
-    if (this.socket?.connected) {
-      this.socket.emit('feedback:submitted', { count: 0 })
-    }
-
+    const text = this.buildFeedbackPrompt()
     try {
       await navigator.clipboard.writeText(text)
-      this.showToast('Sent to Claude')
+      this.showToast('Copied!')
       this.log('Copied to clipboard:', text)
     } catch (error) {
-      this.showToast('Sent to Claude')
-      this.log('Clipboard copy failed (channel push still sent):', error)
+      this.showToast('Failed to copy')
+      this.log('Failed to copy:', error)
     }
+  }
+
+  private sendFeedbackToClaude() {
+    this.exitInspectingMode()
+    if (this.demo) {
+      this.showToast('Demo mode — no server')
+      return
+    }
+    if (!this.sessionId) {
+      this.showToast('No session ID')
+      return
+    }
+    if (!this.socket?.connected) {
+      this.showToast('Not connected')
+      return
+    }
+    if (this.channelListenerCount === 0) {
+      // Defensive: button should be disabled in this case, but never trust UI.
+      this.showToast('No Claude listening')
+      return
+    }
+    // count: 0 means "I don't know exactly, just check via REST". Used for the
+    // toolbar button which fires regardless of selection state.
+    this.socket.emit('feedback:submitted', { count: 0 })
+    this.showToast('Sent to Claude')
   }
 
   private renderErrorIcon() {
@@ -1189,11 +1238,24 @@ export class AnnotatorToolbar extends LitElement {
 
         <button
           class="toolbar-btn"
-          @click=${this.copySessionId}
-          @mouseenter=${(e: MouseEvent) => this.showTooltip('Send to Claude', e.currentTarget as HTMLElement)}
+          @click=${this.copyFeedbackToClipboard}
+          @mouseenter=${(e: MouseEvent) => this.showTooltip('Copy prompt for Claude', e.currentTarget as HTMLElement)}
           @mouseleave=${() => this.hideTooltip()}
-          aria-label="Send selections to Claude Code"
-          title="Send to Claude"
+          aria-label="Copy feedback prompt to clipboard"
+          title="Copy"
+        >
+          ${this.renderClipboardIcon()}
+        </button>
+
+        <button
+          class="toolbar-btn"
+          @click=${this.sendFeedbackToClaude}
+          @mouseenter=${(e: MouseEvent) => this.showTooltip(this.channelListenerCount > 0 ? 'Send to Claude' : 'No Claude listening — install the channel plugin', e.currentTarget as HTMLElement)}
+          @mouseleave=${() => this.hideTooltip()}
+          ?disabled=${this.channelListenerCount === 0}
+          aria-label="${this.channelListenerCount > 0 ? 'Send selections to Claude Code' : 'Send to Claude (no listener connected)'}"
+          aria-disabled="${this.channelListenerCount === 0}"
+          title="${this.channelListenerCount > 0 ? 'Send to Claude' : 'No Claude listening'}"
         >
           ${this.renderSendIcon()}
         </button>
