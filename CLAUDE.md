@@ -17,11 +17,35 @@ bun link && bun link vite-plugin-ai-annotator  # Local dev linking (run build fi
 
 ## Publish
 
+CI publishes to npm via OIDC Trusted Publishers — no `NPM_TOKEN` secret. Two ways:
+
+**Option A — GitHub UI (workflow_dispatch):**
+
 ```bash
-npm version patch --no-git-tag-version && npm publish
+gh workflow run release.yml -f version_type=patch    # or minor / major
 ```
 
-`prepublishOnly` runs `bun run build` automatically.
+The `Release` workflow bumps the version, commits + tags, pushes, runs `npm publish --provenance`, and creates a GitHub Release.
+
+**Option B — Local tag push:**
+
+```bash
+npm version patch -m "chore(release): %s"
+git push --follow-tags
+```
+
+The `NPM Publish` workflow triggers on tag `v*`, builds, and publishes with provenance.
+
+**One-time setup (must be done once on npmjs.com):**
+
+1. https://www.npmjs.com/package/vite-plugin-ai-annotator/access → Trusted Publisher → Add
+2. Publisher: GitHub Actions · Org: `nguyenvanduocit` · Repo: `vite-plugin-ai-annotator`
+3. Workflow filename: `release.yml` (and add a second entry for `npm-publish.yml`)
+4. Environment: leave blank
+
+Once configured, every CI publish exchanges GitHub's OIDC token for an npm publish token and emits a SLSA provenance attestation visible on the package page.
+
+> Manual `npm publish` from a workstation still works but requires 2FA OTP. Prefer CI.
 
 ## Architecture
 

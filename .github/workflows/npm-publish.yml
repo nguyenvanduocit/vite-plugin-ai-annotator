@@ -1,0 +1,47 @@
+name: NPM Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # id-token: write is required for OIDC Trusted Publisher.
+      # npm CLI exchanges the GitHub OIDC token for an npm publish token at
+      # publish time — no NPM_TOKEN secret needed.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # setup-node is still needed even when using Bun for install/build:
+      # it configures ~/.npmrc with the npm registry URL so that `npm publish`
+      # can perform the OIDC token exchange against registry.npmjs.org.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      # --provenance produces a SLSA provenance attestation (signed by Sigstore)
+      # visible on the npm package page. Trusted Publishers + provenance are a
+      # bundled feature on npm — the OIDC exchange that authenticates the
+      # publish also signs the attestation.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
