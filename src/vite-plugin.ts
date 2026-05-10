@@ -2,9 +2,39 @@ import type { Plugin, ViteDevServer } from 'vite';
 import { spawn, ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import MagicString from 'magic-string';
 import { autoSetupSkills } from './auto-setup-skills';
+
+const CHANNEL_PLUGIN_KEY = 'claude-annotator-plugin@claude-annotator-plugin';
+const CHANNEL_PLUGIN_REPO = 'nguyenvanduocit/claude-annotator-plugin';
+
+/**
+ * Check whether the user has already enabled the channel plugin in their
+ * Claude Code user-global settings. Returns false on any error so the
+ * suggestion is printed (better noisy than silent + missing).
+ */
+function isChannelPluginEnabled(): boolean {
+  try {
+    const settingsPath = join(homedir(), '.claude', 'settings.json');
+    if (!existsSync(settingsPath)) return false;
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    return Boolean(settings?.enabledPlugins?.[CHANNEL_PLUGIN_KEY]);
+  } catch {
+    return false;
+  }
+}
+
+function printChannelPluginSuggestion(): void {
+  console.log(
+    `[ai-annotator] 💡 Channel push plugin not detected. For instant push to Claude Code (instead of copy-paste), run once:\n` +
+    `  /plugin marketplace add ${CHANNEL_PLUGIN_REPO}\n` +
+    `  /plugin install ${CHANNEL_PLUGIN_KEY}\n` +
+    `  claude --dangerously-load-development-channels plugin:${CHANNEL_PLUGIN_KEY}\n` +
+    `  (Claude Code v2.1.80+; set autoSetupChannelPlugin: false in your vite.config to hide this.)`
+  );
+}
 
 export interface AiAnnotatorOptions {
   /**
@@ -39,6 +69,14 @@ export interface AiAnnotatorOptions {
    * @default true
    */
   autoSetupSkills?: boolean;
+  /**
+   * Print a one-time hint pointing the user at the Claude Code channel plugin
+   * (claude-annotator-plugin) when it is not already enabled in their
+   * ~/.claude/settings.json. The hint is the install commands themselves —
+   * this plugin never modifies your global Claude Code config.
+   * @default true
+   */
+  autoSetupChannelPlugin?: boolean;
 }
 
 // Data attribute name for source location
@@ -122,6 +160,7 @@ class AiAnnotatorServer {
       verbose: options.verbose ?? false,
       injectSourceLoc: options.injectSourceLoc ?? true,
       autoSetupSkills: options.autoSetupSkills ?? true,
+      autoSetupChannelPlugin: options.autoSetupChannelPlugin ?? true,
     };
 
     // Detect if we're running from source (src/) or from installed package (dist/)
@@ -316,6 +355,12 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
         if (skillsResult.updated.length > 0) {
           console.log(`[ai-annotator] ✅ AI skills updated: ${skillsResult.updated.map(f => f.replace(root + '/', '')).join(', ')}`);
         }
+      }
+
+      // Hint about the channel plugin if it isn't already enabled. We only
+      // read ~/.claude/settings.json — never write to it.
+      if (options.autoSetupChannelPlugin !== false && !isChannelPluginEnabled()) {
+        printChannelPluginSuggestion();
       }
     },
 

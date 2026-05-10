@@ -92,80 +92,53 @@ export default defineNuxtConfig({
 
 **That's it!** Nuxt handles the rest automatically.
 
-#### Configure MCP (Vite and Nuxt)
-
-**Option A: Auto Setup (Recommended)**
-
-Enable automatic MCP configuration in your Vite config:
-
-```typescript
-annotator({
-  autoSetupMcp: true,
-})
-```
-
-For Nuxt, configure in `nuxt.config.ts`:
-
-```typescript
-export default defineNuxtConfig({
-  modules: ['vite-plugin-ai-annotator/nuxt'],
-  aiAnnotator: {
-    autoSetupMcp: true,
-  }
-})
-```
-
-This automatically creates/updates `.mcp.json`, `.cursor/mcp.json`, and `.vscode/mcp.json` based on your project.
-
-**Option B: Manual Setup**
-
-```bash
-claude mcp add annotator -- npx vite-plugin-ai-annotator mcp -s http://localhost:7318
-```
-
 #### Step 3: Start your dev server
 
 ```bash
 bun dev
 ```
 
-The annotator toolbar will automatically appear in your application.
+The annotator toolbar will automatically appear in your application. The plugin auto-writes a skill file (`.claude/skills/ai-annotator/SKILL.md`) so Claude Code knows how to read your feedback over the REST API on every restart.
 
 ## Usage
 
-1. Click the **inspect button** on the toolbar to enter feedback mode
-2. Click on any element(s) you want to provide feedback on
-3. Ask Claude Code to modify them - it will use `annotator_get_feedback` to get the selected feedback with their source locations
-4. Claude modifies the source code directly
+### With the channel plugin (push, recommended)
 
-Example prompt: *"Make the selected button larger and change its color to blue"*
+The Vite plugin prints these install commands on dev-server start when the channel plugin isn't enabled — copy/paste once:
+
+```bash
+/plugin marketplace add nguyenvanduocit/claude-annotator-plugin
+/plugin install claude-annotator-plugin@claude-annotator-plugin
+# Restart with the channel flag (Claude Code v2.1.80+; research preview)
+claude --dangerously-load-development-channels plugin:claude-annotator-plugin@claude-annotator-plugin
+```
+
+After that the hint stays silent (the Vite plugin reads `~/.claude/settings.json` to detect it; it never writes to that file). Set `autoSetupChannelPlugin: false` if you want to silence the hint without installing.
+
+1. Click the **inspect** button on the toolbar to enter feedback mode
+2. Click any element(s) you want to give feedback on, type a comment
+3. Click **send** — Claude Code's session immediately receives a `<channel source="ai-annotator">` event with your `session_id`, `page_url`, and `count`
+4. Claude fetches the details from the REST API, edits the source files, and pushes a toast back to your toolbar with progress
+
+### Without the channel plugin (pull)
+
+Same first three steps. Then ask Claude Code to apply your feedback — it follows the auto-installed skill, calls `GET /api/sessions/<id>/feedback`, edits the files, and `DELETE`s the feedback when done.
+
+Example prompt: *"Apply the feedback I just left in the browser."*
 
 ## Configuration
 
 ```typescript
 annotator({
-  port: 7318,              // Server port (default: 7318)
-  autoSetupMcp: true,      // Auto-configure MCP files (default: false)
-  autoSetupSkills: true,   // Auto-write AI tool skill files (default: true)
-  verbose: false,          // Enable detailed logging (default: false)
+  port: 7318,                     // Server port (default: 7318)
+  autoSetupSkills: true,          // Auto-write AI tool skill files (default: true)
+  autoSetupChannelPlugin: true,   // Print one-time install hint for the Claude Code
+                                  // channel plugin if it isn't already enabled in
+                                  // ~/.claude/settings.json (default: true; read-only)
+  injectSourceLoc: true,          // Inject data-source-loc attrs into HTML (default: true)
+  verbose: false,                 // Enable detailed logging (default: false)
 })
 ```
-
-### Auto MCP Setup
-
-When `autoSetupMcp: true`, the plugin automatically:
-
-1. **Detects your package manager** from lockfile:
-   - `bun.lockb` / `bun.lock` → uses `bunx`
-   - `pnpm-lock.yaml` → uses `pnpm dlx`
-   - Otherwise → uses `npx`
-
-2. **Creates/updates MCP config files**:
-   - `.mcp.json` - Claude Code, Cline, Roo Code
-   - `.cursor/mcp.json` - Cursor (only if `.cursor/` exists)
-   - `.vscode/mcp.json` - VS Code (only if `.vscode/` exists)
-
-3. **Preserves existing config** - merges with other MCP servers, doesn't overwrite
 
 ### Auto AI Skills Setup
 
