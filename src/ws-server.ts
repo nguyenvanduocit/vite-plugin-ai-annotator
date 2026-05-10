@@ -94,8 +94,35 @@ function getRpcFromSessions(sessions: Map<string, BrowserConnection>, sessionId?
   return null
 }
 
+// Channel clients (Claude Code MCP channel processes) join this Socket.IO room
+// so feedback events from any browser session fan out to all of them.
+const CHANNEL_ROOM = 'channels'
+
 function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string, BrowserConnection>): void {
   io.on('connection', (socket: Socket) => {
+    // A connection identifying itself with role=channel is the Claude Code
+    // channel MCP server, not a browser. It does not own a BrowserSession.
+    const role = socket.handshake.query.role
+    if (role === 'channel') {
+      socket.join(CHANNEL_ROOM)
+      logger.log(`Channel client connected (sid: ${socket.id})`)
+
+      socket.on('channel:notify', (payload: { sessionId?: string; message?: string; status?: string }) => {
+        if (!payload?.sessionId || typeof payload.message !== 'string') return
+        const conn = sessions.get(payload.sessionId)
+        if (!conn) return
+        conn.socket.emit('channel:notify', {
+          message: payload.message,
+          status: payload.status ?? 'info',
+        })
+      })
+
+      socket.on('disconnect', () => {
+        logger.log(`Channel client disconnected (sid: ${socket.id})`)
+      })
+      return
+    }
+
     const sessionId = generateSessionId()
 
     const session: BrowserSession = {
@@ -133,6 +160,20 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
       session.url = context.url
       session.title = context.title
       session.lastActivity = Date.now()
+    })
+
+    // Browser explicitly signals "I'm sending feedback to Claude now" (e.g.
+    // user pressed the toolbar's send button). Fan out to channel clients so
+    // they can push a notifications/claude/channel event into Claude Code.
+    socket.on('feedback:submitted', (payload: { count?: number }) => {
+      const count = typeof payload?.count === 'number' ? payload.count : 0
+      session.lastActivity = Date.now()
+      io.to(CHANNEL_ROOM).emit('feedback:submitted', {
+        sessionId,
+        pageUrl: session.url,
+        pageTitle: session.title,
+        count,
+      })
     })
 
     socket.on('disconnect', () => {

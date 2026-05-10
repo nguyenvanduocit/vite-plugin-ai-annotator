@@ -460,6 +460,17 @@ export class AnnotatorToolbar extends LitElement {
     this.socket.on('connect_error', (error: Error) => {
       this.log('Connection error:', error.message)
     })
+
+    // Toast relayed from Claude via the channel plugin's notify_user tool.
+    this.socket.on('channel:notify', (data: { message?: string; status?: string }) => {
+      if (typeof data?.message !== 'string') return
+      const prefix =
+        data.status === 'done' ? '✓ ' :
+        data.status === 'error' ? '✗ ' :
+        data.status === 'progress' ? '… ' :
+        ''
+      this.showToast(prefix + data.message)
+    })
   }
 
   private wrapRpcHandler<T extends (...args: any[]) => any>(name: string, handler: T): T {
@@ -974,13 +985,22 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
     const text = `I have selected ${elements.length} feedback item(s) in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback and modify the code accordingly.`
+
+    // Push event to any connected channel client (Claude Code session) so it
+    // shows up immediately without the user having to paste anything.
+    if (this.socket?.connected) {
+      this.socket.emit('feedback:submitted', { count: elements.length })
+    }
+
     try {
       await navigator.clipboard.writeText(text)
-      this.showToast(`Copied ${elements.length} element(s)`)
+      this.showToast(`Sent ${elements.length} element(s) to Claude`)
       this.exitInspectingMode()
     } catch (error) {
-      this.showToast('Failed to copy')
-      this.log('Failed to copy:', error)
+      // Clipboard failed but the channel push above still went out.
+      this.showToast(`Sent ${elements.length} element(s) to Claude`)
+      this.log('Clipboard copy failed (channel push still sent):', error)
+      this.exitInspectingMode()
     }
   }
 
@@ -1095,13 +1115,20 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
     const text = `I have feedback in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback`
+
+    // Notify any connected channel client (Claude Code session). Count is
+    // unknown at this entry point; 0 means "I don't know, just check".
+    if (this.socket?.connected) {
+      this.socket.emit('feedback:submitted', { count: 0 })
+    }
+
     try {
       await navigator.clipboard.writeText(text)
-      this.showToast('Copied!')
+      this.showToast('Sent to Claude')
       this.log('Copied to clipboard:', text)
     } catch (error) {
-      this.showToast('Failed to copy')
-      this.log('Failed to copy:', error)
+      this.showToast('Sent to Claude')
+      this.log('Clipboard copy failed (channel push still sent):', error)
     }
   }
 
