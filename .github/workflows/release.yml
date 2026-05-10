@@ -33,18 +33,16 @@ jobs:
         with:
           bun-version: latest
 
+      # Node 24 ships with npm 11+, which is required for OIDC trusted-
+      # publisher token exchange at publish time. Node 22 LTS bundles
+      # npm 10.x — that supports OIDC only for provenance signing, not
+      # for publish authentication, so the registry sees an anonymous
+      # PUT and returns 404.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
-
-      # npm 10.x (bundled with Node 22 LTS) supports OIDC for provenance
-      # signing but NOT for publish authentication. npm 11.5.1+ adds OIDC
-      # token exchange for the publish step itself. Without this, publish
-      # falls back to anonymous and the registry returns 404.
-      - name: Upgrade npm to 11+ for OIDC publish auth
-        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
