@@ -1,43 +1,48 @@
 name: Release
 
 on:
+  push:
+    branches: [master]
+  # Manual re-run path: needed when semantic-release tags + commits succeed
+  # but npm publish fails midway (OIDC blip, registry hiccup). Re-running
+  # picks up where it left off because semantic-release uses git tags as
+  # the baseline for the next version.
   workflow_dispatch:
-    inputs:
-      version_type:
-        description: 'Semver bump'
-        type: choice
-        required: true
-        default: patch
-        options:
-          - patch
-          - minor
-          - major
 
 jobs:
   release:
+    # Defensive skip for manual `chore(release): ...` commits pushed by
+    # someone other than the bot. semantic-release's own commits use
+    # GITHUB_TOKEN, which already does not re-trigger workflows — but a
+    # human pushing the same prefix from a workstation WOULD loop without
+    # this guard.
+    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      # OIDC token exchange for npm Trusted Publisher — no NPM_TOKEN needed.
+      issues: write
+      pull-requests: write
+      # OIDC token exchange for npm Trusted Publisher + provenance signing.
       id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history so npm version's commit+tag has proper context.
+          # semantic-release needs the full history to find the last release tag.
           fetch-depth: 0
+          # Default GITHUB_TOKEN is fine for pushing back to master because
+          # it does not re-trigger workflows (avoids release-commit loops).
+          persist-credentials: true
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      # Node 24 ships with npm 11+, which is required for OIDC trusted-
-      # publisher token exchange at publish time. Node 22 LTS bundles
-      # npm 10.x — that supports OIDC only for provenance signing, not
-      # for publish authentication, so the registry sees an anonymous
-      # PUT and returns 404.
+      # Node 24 ships npm 11+, required for OIDC trusted-publisher token
+      # exchange at publish time. Node 22 LTS bundles npm 10.x which only
+      # supports OIDC for provenance signing, not for publish auth.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -47,33 +52,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Build BEFORE bumping the version. If build fails we don't want a
-      # half-released tag pointing at broken code.
+      # Pre-build so the dist artifacts exist before semantic-release/npm
+      # validates the package. prepublishOnly script in package.json runs
+      # again at npm publish time as a safety net for manual publishes.
       - name: Build
         run: bun run build
 
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump version
-        id: bump
-        run: |
-          NEW_VERSION=$(npm version ${{ inputs.version_type }} -m "chore(release): %s")
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-
-      # Pushing with the default GITHUB_TOKEN does NOT re-trigger workflows,
-      # so the tag push from here will not re-run npm-publish.yml. We publish
-      # in the same job below to avoid that gap. Local users who push tags
-      # manually with their own credentials WILL trigger npm-publish.yml.
-      - name: Push commit + tag
-        run: git push --follow-tags
-
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-
-      - name: Create GitHub Release
+      - name: Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ steps.bump.outputs.version }}" --generate-notes
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # npm CLI honors this env var when publishing — produces a SLSA
+          # provenance attestation visible on the npm package page. semantic-
+          # release/npm calls `npm publish` internally, so the flag flows through.
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: npx semantic-release
