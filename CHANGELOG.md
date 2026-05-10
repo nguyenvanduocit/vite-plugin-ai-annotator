@@ -1,3 +1,9 @@
+## [3.0.1](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.0.0...v3.0.1) (2026-05-10)
+
+### Bug Fixes
+
+* **ci:** clear NODE_AUTH_TOKEN to allow npm OIDC exchange ([203c4e0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/203c4e06ef8133128a6ae1cdab8b62405d3decde))
+
 ## [3.0.0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v2.0.0...v3.0.0) (2026-05-10)
 
 ### ⚠ BREAKING CHANGES
