@@ -1,3 +1,9 @@
+## [3.0.2](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.0.1...v3.0.2) (2026-05-10)
+
+### Bug Fixes
+
+* **ci:** publish to npm in workflow shell, not via subprocess ([0121c50](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/0121c507f4e18fd3d94dc2b5857d5701720de877))
+
 ## [3.0.1](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.0.0...v3.0.1) (2026-05-10)
 
 ### Bug Fixes
