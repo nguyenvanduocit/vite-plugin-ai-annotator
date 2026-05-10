@@ -39,6 +39,13 @@ jobs:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
 
+      # npm 10.x (bundled with Node 22 LTS) supports OIDC for provenance
+      # signing but NOT for publish authentication. npm 11.5.1+ adds OIDC
+      # token exchange for the publish step itself. Without this, publish
+      # falls back to anonymous and the registry returns 404.
+      - name: Upgrade npm to 11+ for OIDC publish auth
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
