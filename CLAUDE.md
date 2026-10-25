@@ -84,6 +84,10 @@ src/
   utils/
     logger.ts            Verbose-gated logger factory
     screenshot.ts        Saves base64 webp to $TMPDIR/ai-annotator-screenshots/
+    feedback-fields.ts   Field selection for feedback payloads. Pure (no node/DOM),
+                           shared by the REST API, the channel event, and the
+                           browser's clipboard prompt — keep it import-free so the
+                           browser bundle never pulls node:fs in through it
     xpath.ts             XPath utilities
 ```
 
@@ -102,7 +106,7 @@ Type generation runs twice: `tsconfig.json` (main, module=commonjs, excludes `vi
 ## RPC System
 
 `src/rpc/define.ts` is the source of truth:
-- **ServerFunctions**: `getSessions`, `ping` - called by browser clients
+- **ServerFunctions**: `getSessions`, `saveScreenshot`, `ping` - called by browser clients
 - **ClientFunctions**: `getPageContext`, `getSelectedElements`, `triggerSelection`, `captureScreenshot`, `clearSelection`, `injectCSS`, `injectJS`, `getConsole`, `ping` - called on browser
 
 Generated files (`*.generated.ts`) must not be edited manually. Regenerate with `socketrpc-gen` after changing `define.ts`.
@@ -162,7 +166,9 @@ Set `AI_ANNOTATOR_PORT` env var if using a non-default port.
 - **Source location injection**: `data-source-loc` attributes injected into HTML elements via MagicString regex transform (controlled by `injectSourceLoc` option, default true)
 - **SSR support**: Vite plugin intercepts HTML responses via middleware (patches `res.write`/`res.end`) for frameworks like Nuxt
 - **Server detection**: Plugin checks `/health` endpoint before spawning to avoid duplicate servers
-- **Screenshots saved to tmpdir**: `$TMPDIR/ai-annotator-screenshots/screenshot-{timestamp}.webp`
+- **Screenshots saved to tmpdir**: `$TMPDIR/ai-annotator-screenshots/screenshot-{timestamp}-{random}.webp`
+- **Every feedback item carries a screenshot**: Copy, Send to Claude, and `GET /feedback` all go through the toolbar's `collectFeedback()`, which captures each selected element, stores it via the `saveScreenshot` RPC, and sets `imagePath`. A failed capture leaves that item without `imagePath` and the toast reports the count
+- **Regenerate RPC with the pinned generator**: `bunx socketrpc-gen@4.0.0 ./src/rpc/define.ts` — newer majors rename the generated API
 - **Console capture**: Browser toolbar monkey-patches `console.*` methods, buffers max 1000 entries (trims to 500)
 - **Default port**: 7318. Configurable via `--port`, `INSPECTOR_PORT`, or `PORT` env vars
 - **Socket.IO max buffer**: 50MB (`maxHttpBufferSize`) for large screenshots

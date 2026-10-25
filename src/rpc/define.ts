@@ -85,6 +85,9 @@ export interface ServerFunctions {
   // Session management (stateless - no active session concept)
   getSessions: () => BrowserSession[]
 
+  // Store a base64 webp screenshot on disk, returns its absolute file path
+  saveScreenshot: (base64: string) => string
+
   // Ping for health check
   ping: () => string
 }

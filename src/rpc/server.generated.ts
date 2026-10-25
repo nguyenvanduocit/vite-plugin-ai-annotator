@@ -9,7 +9,7 @@
  *   server.client.methodName(args);
  *   server.dispose();
  *
- * To regenerate: bunx socketrpc-gen /Volumes/Data/Projects/instantcode/app/src/rpc/define.ts
+ * To regenerate: bunx socketrpc-gen /Users/firegroup/projects/ai-annotator/vite-plugin-ai-annotator/src/rpc/define.ts
  */
 
 import type { Socket } from "socket.io";
@@ -21,6 +21,8 @@ import type { BrowserSession, PageContext, ElementData, SelectionResult, Screens
 export interface RpcServerHandle {
     /** Register handler for 'getSessions' - called by client */
     getSessions: (handler: () => Promise<BrowserSession[] | RpcError>) => void;
+    /** Register handler for 'saveScreenshot' - called by client */
+    saveScreenshot: (handler: (base64: string) => Promise<string | RpcError>) => void;
     /** Register handler for 'ping' - called by client */
     ping: (handler: () => Promise<string | RpcError>) => void;
     /** Register handler for RPC errors */
@@ -108,6 +110,20 @@ export function createRpcServer(socket: Socket): RpcServer {
             };
             socket.on('getSessions', listener);
             unsubscribers.push(() => socket.off('getSessions', listener));
+        },
+        saveScreenshot(handler: (base64: string) => Promise<string | RpcError>) {
+            checkDisposed();
+            const listener = async (base64: string, callback: (result: string | RpcError) => void) => {
+                try {
+                    const result = await handler(base64);
+                    callback(result);
+                } catch (error) {
+                    console.error('[saveScreenshot] Handler error:', error);
+                    callback({ message: error instanceof Error ? error.message : String(error), code: 'INTERNAL_ERROR', data: undefined });
+                }
+            };
+            socket.on('saveScreenshot', listener);
+            unsubscribers.push(() => socket.off('saveScreenshot', listener));
         },
         ping(handler: () => Promise<string | RpcError>) {
             checkDisposed();

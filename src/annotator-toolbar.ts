@@ -19,9 +19,17 @@ import { createInspectionManager, type InspectionManager } from './annotator/ins
 import { findNearestComponent } from './annotator/detectors'
 import type { ElementData, PageContext, SelectionResult, ScreenshotResult, ConsoleEntry, InjectResult } from './rpc/define'
 import { createRpcClient, type RpcClient } from './rpc/client.generated'
+import { isRpcError } from './rpc/types.generated'
 import { CONSOLE_LIMITS, SCREENSHOT_TIMEOUT_MS } from './annotator/constants'
+import { filterFeedbackFields, type FeedbackField } from './utils/feedback-fields'
 
 const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug'] as const
+
+// Inlined into the clipboard prompt. Mirrors the field set the skill tells
+// Claude to fetch, so a paste carries what the REST round-trip would return.
+// `styles` and `children` stay opt-in — children is recursive and would bloat
+// the clipboard — and remain reachable over REST.
+const CLIPBOARD_FIELDS: FeedbackField[] = ['xpath', 'attributes']
 
 interface PopoverState {
   visible: boolean
@@ -496,7 +504,7 @@ export class AnnotatorToolbar extends LitElement {
     if (!this.rpc) return
 
     this.rpc.handle.getPageContext(this.wrapRpcHandler('getPageContext', async () => this.getPageContext()))
-    this.rpc.handle.getSelectedElements(this.wrapRpcHandler('getSelectedElements', async () => this.getSelectedElements()))
+    this.rpc.handle.getSelectedElements(this.wrapRpcHandler('getSelectedElements', async () => (await this.collectFeedback()).elements))
     this.rpc.handle.triggerSelection(this.wrapRpcHandler('triggerSelection', async (mode, selector, selectorType) => this.triggerSelection(mode, selector, selectorType)))
     this.rpc.handle.captureScreenshot(this.wrapRpcHandler('captureScreenshot', async (type, selector, quality) => this.captureScreenshot(type, selector, quality)))
     this.rpc.handle.clearSelection(this.wrapRpcHandler('clearSelection', async () => this.clearSelection()))
@@ -523,11 +531,12 @@ export class AnnotatorToolbar extends LitElement {
     }
   }
 
-  private getSelectedElements(): ElementData[] {
+  private getSelectedElements(imagePaths?: Map<Element, string>): ElementData[] {
     if (!this.selectionManager) return []
 
     const elements = this.selectionManager.buildHierarchicalStructure(
-      (el) => findNearestComponent(el, this.verbose)
+      (el) => findNearestComponent(el, this.verbose),
+      imagePaths
     )
 
     this.enrichElementsWithComments(elements, this.selectionManager.getSelectedElements())
@@ -622,53 +631,7 @@ export class AnnotatorToolbar extends LitElement {
       }
 
       this.log(`Capturing screenshot of ${type === 'element' ? selector : 'viewport'}`)
-
-      // Add timeout to prevent hanging on complex pages
-      const screenshotPromise = toBlob(targetElement as HTMLElement, {
-        quality,
-        type: 'image/webp',
-        cacheBust: true,
-        pixelRatio: 1,
-        includeQueryParams: true,
-        // Filter out all annotator UI elements
-        filter: (node) => {
-          if (node instanceof Element) {
-            const className = typeof node.className === 'string' ? node.className : ((node.className as unknown as SVGAnimatedString)?.baseVal || '')
-            const tagName = node.tagName?.toLowerCase() || ''
-
-            // Skip all annotator elements
-            if (className.includes('annotator-') || tagName === 'annotator-toolbar') {
-              return false
-            }
-          }
-          return true
-        },
-      })
-
-      const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('Screenshot timeout')), SCREENSHOT_TIMEOUT_MS)
-      )
-
-      const blob = await Promise.race([screenshotPromise, timeoutPromise])
-
-      if (!blob) {
-        this.log('toBlob returned null - screenshot capture failed')
-        return { success: false, error: 'Failed to capture screenshot (toBlob returned null)' }
-      }
-
-      this.log(`Screenshot captured, blob size: ${blob.size} bytes`)
-
-      const reader = new FileReader()
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string
-          const base64Data = result.split(',')[1]
-          resolve(base64Data)
-        }
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-      })
-
+      const base64 = await this.captureElementBase64(targetElement, quality)
       return { success: true, base64 }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -678,6 +641,92 @@ export class AnnotatorToolbar extends LitElement {
         error: errorMessage
       }
     }
+  }
+
+  // Renders one element to a base64 webp (no data-URL prefix). Throws on failure.
+  private async captureElementBase64(targetElement: Element, quality: number = 0.7): Promise<string> {
+    // Add timeout to prevent hanging on complex pages
+    const screenshotPromise = toBlob(targetElement as HTMLElement, {
+      quality,
+      type: 'image/webp',
+      cacheBust: true,
+      pixelRatio: 1,
+      includeQueryParams: true,
+      // The canvas is sized to the border box; a cloned root margin would push
+      // the content down and crop it (e.g. a <p> or <h1>)
+      style: { margin: '0' },
+      // Filter out all annotator UI elements
+      filter: (node) => {
+        if (node instanceof Element) {
+          // Text-selection wrappers hold the user's highlighted page text, not UI
+          if (node.classList.contains('annotator-text-selection')) return true
+
+          const className = typeof node.className === 'string' ? node.className : ((node.className as unknown as SVGAnimatedString)?.baseVal || '')
+          const tagName = node.tagName?.toLowerCase() || ''
+
+          // Skip all annotator elements
+          if (className.includes('annotator-') || tagName === 'annotator-toolbar') {
+            return false
+          }
+        }
+        return true
+      },
+    })
+
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error('Screenshot timeout')), SCREENSHOT_TIMEOUT_MS)
+    )
+
+    const blob = await Promise.race([screenshotPromise, timeoutPromise])
+
+    if (!blob) {
+      throw new Error('Failed to capture screenshot (toBlob returned null)')
+    }
+
+    this.log(`Screenshot captured, blob size: ${blob.size} bytes`)
+
+    const reader = new FileReader()
+    return new Promise<string>((resolve, reject) => {
+      reader.onload = () => {
+        const result = reader.result as string
+        resolve(result.split(',')[1])
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  // Screenshots every selected element and stores each on the server, so the
+  // feedback payload carries an `imagePath` per element. Sequential on purpose:
+  // html-to-image clones the page per capture and parallel runs spike memory.
+  // A failed capture leaves that element without an image instead of blocking
+  // the feedback; the count of failures comes back so callers can say so.
+  private async captureSelectionImages(): Promise<{ imagePaths: Map<Element, string>; failed: number }> {
+    const imagePaths = new Map<Element, string>()
+    let failed = 0
+    if (!this.selectionManager) return { imagePaths, failed }
+
+    for (const [element, info] of this.selectionManager.getSelectedElements()) {
+      try {
+        // Text selections are a wrapper span; the container shows the context
+        const base64 = await this.captureElementBase64(info.textSelection?.containerElement ?? element)
+        if (!this.rpc) throw new Error('Not connected')
+        const filePath = await this.rpc.server.saveScreenshot(base64, SCREENSHOT_TIMEOUT_MS)
+        if (isRpcError(filePath)) throw new Error(filePath.message)
+        imagePaths.set(element, filePath)
+      } catch (error) {
+        failed++
+        this.log(`Screenshot for selection #${info.index} failed:`, error)
+      }
+    }
+    return { imagePaths, failed }
+  }
+
+  // Selected elements with a screenshot attached to each. Every feedback route
+  // (Copy, Send to Claude, REST) reads through here.
+  private async collectFeedback(): Promise<{ elements: ElementData[]; failedImages: number }> {
+    const { imagePaths, failed } = await this.captureSelectionImages()
+    return { elements: this.getSelectedElements(imagePaths), failedImages: failed }
   }
 
   private clearSelection() {
@@ -983,8 +1032,7 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private async copySelectedElements() {
-    const elements = this.getSelectedElements()
-    if (elements.length === 0) {
+    if (this.selectionCount === 0) {
       this.showToast('No elements selected')
       return
     }
@@ -993,32 +1041,34 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No session ID')
       return
     }
-    const text = `I have selected ${elements.length} feedback item(s) in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback and modify the code accordingly.`
+    this.exitInspectingMode()
+    this.showToast('Capturing screenshots…')
 
     // Keyboard shortcut behavior: always copy text to clipboard; additionally
     // push over the channel when a Claude listener is connected. Toast reflects
     // exactly which actions ran so the user is never told "Sent to Claude"
     // when no Claude was listening.
+    const feedback = this.collectFeedback()
+    let copied = true
+    try {
+      await this.writeClipboard(feedback.then(({ elements }) => this.buildFeedbackPrompt(elements)))
+    } catch (error) {
+      copied = false
+      this.log('Clipboard copy failed:', error)
+    }
+    const { elements, failedImages } = await feedback
+
     const willSend = this.socket?.connected && this.channelListenerCount > 0
     if (willSend) {
-      this.socket!.emit('feedback:submitted', { count: elements.length })
+      this.socket!.emit('feedback:submitted', { count: elements.length, elements })
     }
 
-    const successToast = willSend
+    // Clipboard failed. If we sent over the channel, that still happened —
+    // tell the user the truth either way.
+    const toast = willSend
       ? `Sent ${elements.length} element(s) to Claude`
-      : `Copied ${elements.length} element(s)`
-
-    try {
-      await navigator.clipboard.writeText(text)
-      this.showToast(successToast)
-      this.exitInspectingMode()
-    } catch (error) {
-      // Clipboard failed. If we sent over the channel, that still happened —
-      // tell the user the truth either way.
-      this.showToast(willSend ? successToast : 'Failed to copy')
-      this.log('Clipboard copy failed:', error)
-      this.exitInspectingMode()
-    }
+      : copied ? `Copied ${elements.length} element(s)` : 'Failed to copy'
+    this.showToast(toast + this.failedImagesNote(failedImages))
   }
 
   private toggleInspect() {
@@ -1127,12 +1177,30 @@ export class AnnotatorToolbar extends LitElement {
     this.tooltip = { visible: false, text: '', x: 0, y: 0 }
   }
 
-  // Builds the paste-prompt text that lets a Claude session fetch feedback
-  // via REST. Used by both the Copy button (clipboard) and is conceptually
-  // what the Send button replaces (channel push -> Claude already knows the
-  // session, no text needed).
-  private buildFeedbackPrompt(): string {
-    return `I have feedback in the browser (session: ${this.sessionId}). Fetch them via GET ${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback`
+  // Builds the paste-prompt text. The element data is inlined so a pasting
+  // agent can act straight from the text — no REST/MCP round-trip to read it.
+  // The endpoint still appears for the two things the paste can't carry:
+  // clearing the selection afterwards, and fetching the opt-in fields.
+  private buildFeedbackPrompt(elements: ElementData[]): string {
+    const payload = filterFeedbackFields(
+      elements as unknown as Record<string, unknown>[],
+      CLIPBOARD_FIELDS
+    )
+    const endpoint = `${this.wsEndpoint}/api/sessions/${this.sessionId}/feedback`
+    return [
+      `I selected ${elements.length} element(s) in the browser (page: ${window.location.href}) and left feedback on them.`,
+      `The full element data is inlined below — you do not need to call the API to read it.`,
+      '',
+      '```json',
+      JSON.stringify(payload, null, 2),
+      '```',
+      '',
+      `For each item: open the "file:line" path in \`componentData.componentLocation\` and apply the change its \`comment\` asks for.`,
+      `\`selectedText\`, when present, is the exact text the user highlighted.`,
+      `\`imagePath\` is a screenshot of the element as the user sees it — open it to see the current UI before changing it.`,
+      `After the change ships, clear the selection: DELETE ${endpoint}`,
+      `For computed styles or child elements: GET ${endpoint}?fields=styles,children`,
+    ].join('\n')
   }
 
   private async copyFeedbackToClipboard() {
@@ -1145,18 +1213,24 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No session ID')
       return
     }
-    const text = this.buildFeedbackPrompt()
+    if (this.selectionCount === 0) {
+      this.showToast('No elements selected')
+      return
+    }
+    this.showToast('Capturing screenshots…')
+    const feedback = this.collectFeedback()
     try {
-      await navigator.clipboard.writeText(text)
-      this.showToast('Copied!')
-      this.log('Copied to clipboard:', text)
+      await this.writeClipboard(feedback.then(({ elements }) => this.buildFeedbackPrompt(elements)))
+      const { elements, failedImages } = await feedback
+      this.showToast(`Copied ${elements.length} element(s)` + this.failedImagesNote(failedImages))
+      this.log('Copied to clipboard:', elements)
     } catch (error) {
       this.showToast('Failed to copy')
       this.log('Failed to copy:', error)
     }
   }
 
-  private sendFeedbackToClaude() {
+  private async sendFeedbackToClaude() {
     this.exitInspectingMode()
     if (this.demo) {
       this.showToast('Demo mode — no server')
@@ -1175,10 +1249,33 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No Claude listening')
       return
     }
-    // count: 0 means "I don't know exactly, just check via REST". Used for the
-    // toolbar button which fires regardless of selection state.
-    this.socket.emit('feedback:submitted', { count: 0 })
-    this.showToast('Sent to Claude')
+    // Fires regardless of selection state. When something is selected the data
+    // rides along, so Claude reads it from the push; with an empty selection
+    // the channel tells Claude to check REST instead.
+    if (this.selectionCount > 0) this.showToast('Capturing screenshots…')
+    const { elements, failedImages } = await this.collectFeedback()
+    if (!this.socket?.connected) {
+      this.showToast('Not connected')
+      return
+    }
+    this.socket.emit('feedback:submitted', { count: elements.length, elements })
+    this.showToast(
+      (elements.length ? `Sent ${elements.length} element(s) to Claude` : 'Sent to Claude') +
+      this.failedImagesNote(failedImages)
+    )
+  }
+
+  // Starts the clipboard write synchronously, inside the user gesture, and lets
+  // the text resolve later. Screenshots take seconds, and Safari/Firefox reject
+  // a writeText() issued after the gesture has expired.
+  private writeClipboard(text: Promise<string>): Promise<void> {
+    return navigator.clipboard.write([
+      new ClipboardItem({ 'text/plain': text.then((t) => new Blob([t], { type: 'text/plain' })) }),
+    ])
+  }
+
+  private failedImagesNote(failed: number): string {
+    return failed ? ` (${failed} screenshot(s) failed)` : ''
   }
 
   private renderErrorIcon() {

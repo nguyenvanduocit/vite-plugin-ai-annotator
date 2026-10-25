@@ -9,7 +9,7 @@
  *   client.server.methodName(args);
  *   client.dispose();
  *
- * To regenerate: bunx socketrpc-gen /Volumes/Data/Projects/instantcode/app/src/rpc/define.ts
+ * To regenerate: bunx socketrpc-gen /Users/firegroup/projects/ai-annotator/vite-plugin-ai-annotator/src/rpc/define.ts
  */
 
 import type { Socket } from "socket.io-client";
@@ -45,6 +45,8 @@ export interface RpcClientHandle {
 export interface RpcClientServer {
     /** Call server's 'getSessions' method */
     getSessions: (timeout?: number) => Promise<BrowserSession[] | RpcError>;
+    /** Call server's 'saveScreenshot' method */
+    saveScreenshot: (base64: string, timeout?: number) => Promise<string | RpcError>;
     /** Call server's 'ping' method */
     ping: (timeout?: number) => Promise<string | RpcError>;
 }
@@ -235,6 +237,13 @@ export function createRpcClient(socket: Socket): RpcClient {
         async getSessions(timeout: number = 5000): Promise<BrowserSession[] | RpcError> {
             try {
                 return await socket.timeout(timeout).emitWithAck('getSessions');
+            } catch (err) {
+                return { message: err instanceof Error ? err.message : String(err), code: 'INTERNAL_ERROR', data: undefined };
+            }
+        },
+        async saveScreenshot(base64: string, timeout: number = 5000): Promise<string | RpcError> {
+            try {
+                return await socket.timeout(timeout).emitWithAck('saveScreenshot', base64);
             } catch (err) {
                 return { message: err instanceof Error ? err.message : String(err), code: 'INTERNAL_ERROR', data: undefined };
             }

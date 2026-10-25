@@ -6,9 +6,10 @@ import cors from 'cors'
 import express from 'express'
 import { Server as SocketIOServer, Socket } from 'socket.io'
 import { createRpcServer, type RpcServer } from './rpc/server.generated'
-import type { BrowserSession } from './rpc/define'
+import type { BrowserSession, ElementData } from './rpc/define'
 import { createLogger, type Logger } from './utils/logger'
-import { saveScreenshot, filterFeedbackFields, type FeedbackField } from './utils/screenshot'
+import { saveScreenshot } from './utils/screenshot'
+import { filterFeedbackFields, type FeedbackField } from './utils/feedback-fields'
 
 export interface ServerInstance {
   app: Express
@@ -44,10 +45,12 @@ function setupRoutes(app: Express, publicAddress: string, verbose: boolean, sess
 
       res.setHeader('Content-Type', 'application/javascript')
 
-      const wsUrl = publicAddress.replace('http://', 'ws://').replace('https://', 'wss://')
+      // Hand the toolbar the http(s) address verbatim: Socket.IO negotiates the
+      // websocket upgrade from it, and the toolbar builds REST URLs from the
+      // same value. One address, no scheme juggling.
       const injectionCode = `
 const toolbar = document.createElement('annotator-toolbar');
-toolbar.setAttribute('ws-endpoint', '${wsUrl}');
+toolbar.setAttribute('ws-endpoint', '${publicAddress}');
 toolbar.setAttribute('verbose', '${verbose}');
 document.body.prepend(toolbar);
 `
@@ -97,6 +100,11 @@ function getRpcFromSessions(sessions: Map<string, BrowserConnection>, sessionId?
 // Channel clients (Claude Code MCP channel processes) join this Socket.IO room
 // so feedback events from any browser session fan out to all of them.
 const CHANNEL_ROOM = 'channels'
+
+// Element data inlined into the channel event. Same set the clipboard prompt
+// carries, so both routes hand Claude an identical payload. `styles`/`children`
+// stay opt-in over REST — children is recursive and would bloat the event.
+const CHANNEL_FIELDS: FeedbackField[] = ['xpath', 'attributes']
 
 function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string, BrowserConnection>): void {
   // Tracks how many Claude Code channel clients are currently connected so
@@ -162,6 +170,10 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
       return 'pong'
     })
 
+    // The toolbar uploads element screenshots here so every feedback route
+    // carries an `imagePath` the agent can open
+    rpc.handle.saveScreenshot(async (base64) => saveScreenshot(base64))
+
     rpc.handle.rpcError((error) => {
       logger.error('RPC Error:', error)
     })
@@ -183,14 +195,23 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
     // Browser explicitly signals "I'm sending feedback to Claude now" (e.g.
     // user pressed the toolbar's send button). Fan out to channel clients so
     // they can push a notifications/claude/channel event into Claude Code.
-    socket.on('feedback:submitted', (payload: { count?: number }) => {
-      const count = typeof payload?.count === 'number' ? payload.count : 0
+    //
+    // The browser ships the element data with the event, so Claude reads it
+    // straight from the channel push instead of calling back over REST. A page
+    // running a cached older toolbar bundle sends no `elements`; that stays
+    // valid and the channel falls back to telling Claude to fetch.
+    socket.on('feedback:submitted', (payload: { count?: number; elements?: ElementData[] }) => {
+      const elements = Array.isArray(payload?.elements)
+        ? filterFeedbackFields(payload.elements as unknown as Record<string, unknown>[], CHANNEL_FIELDS)
+        : undefined
+      const count = typeof payload?.count === 'number' ? payload.count : elements?.length ?? 0
       session.lastActivity = Date.now()
       io.to(CHANNEL_ROOM).emit('feedback:submitted', {
         sessionId,
         pageUrl: session.url,
         pageTitle: session.title,
         count,
+        elements,
       })
     })
 
@@ -263,7 +284,8 @@ function setupRestApiRoutes(app: Express, logger: Logger, sessions: Map<string, 
     const rpc = withRpc(res, req.params.id)
     if (!rpc) return
     try {
-      const result = await rpc.client.getSelectedElements(15000)
+      // The browser screenshots every selected element before replying
+      const result = await rpc.client.getSelectedElements(60000)
       if (Array.isArray(result) && result.length === 0) {
         res.json([])
         return

@@ -59,8 +59,9 @@ All endpoints return JSON. Obtain session ID from \`GET /api/sessions\` first.
 
 1. \`GET ${serverUrl}/api/sessions\` → get session ID
 2. \`GET ${serverUrl}/api/sessions/{id}/feedback\` → read user feedback
-3. Make code changes based on feedback
-4. \`DELETE ${serverUrl}/api/sessions/{id}/feedback\` → clear feedback after addressing it`;
+3. Open each item's \`imagePath\` — a screenshot of the element as the user sees it
+4. Make code changes based on feedback
+5. \`DELETE ${serverUrl}/api/sessions/{id}/feedback\` → clear feedback after addressing it`;
 }
 
 /**
