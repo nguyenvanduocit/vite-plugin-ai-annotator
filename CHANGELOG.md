@@ -1,3 +1,9 @@
+## [3.3.0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.2.1...v3.3.0) (2026-10-25)
+
+### Features
+
+* **toolbar:** always attach element screenshots to feedback ([d674b59](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/d674b597f6bb0381136552c09efd9b12797a79c2))
+
 ## [3.0.2](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.0.1...v3.0.2) (2026-05-10)
 
 ### Bug Fixes
