@@ -1,3 +1,9 @@
+## [3.4.0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.3.0...v3.4.0) (2026-11-02)
+
+### Features
+
+* **toolbar:** show only the buttons that can act, add Send to Paseo and draggable layout ([fa0f0fe](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/fa0f0fefab4c96fabfc319efc7b7dbf9a063ea89))
+
 ## [3.3.0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.2.1...v3.3.0) (2026-10-25)
 
 ### Features
