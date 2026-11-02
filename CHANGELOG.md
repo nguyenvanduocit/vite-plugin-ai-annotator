@@ -1,3 +1,9 @@
+## [3.4.1](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.4.0...v3.4.1) (2026-11-02)
+
+### Bug Fixes
+
+* **paseo:** start "Send to Paseo" agents in auto mode ([a018840](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/a018840b2bf3bf2b6ebda1b6927eec10dbcf3006))
+
 ## [3.4.0](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.3.0...v3.4.0) (2026-11-02)
 
 ### Features
