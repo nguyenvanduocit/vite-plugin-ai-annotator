@@ -10,6 +10,7 @@ import type { BrowserSession, ElementData } from './rpc/define'
 import { createLogger, type Logger } from './utils/logger'
 import { saveScreenshot } from './utils/screenshot'
 import { filterFeedbackFields, type FeedbackField } from './utils/feedback-fields'
+import { buildPaseoPrompt, feedbackTitle, isTrustedOrigin, sendToNewPaseoAgent, type PaseoTarget } from './paseo'
 
 export interface ServerInstance {
   app: Express
@@ -106,7 +107,13 @@ const CHANNEL_ROOM = 'channels'
 // stay opt-in over REST — children is recursive and would bloat the event.
 const CHANNEL_FIELDS: FeedbackField[] = ['xpath', 'attributes']
 
-function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string, BrowserConnection>): void {
+function setupSocketIO(
+  io: SocketIOServer,
+  logger: Logger,
+  sessions: Map<string, BrowserConnection>,
+  publicAddress: string,
+  paseo: PaseoTarget | undefined
+): void {
   // Tracks how many Claude Code channel clients are currently connected so
   // browsers can show/hide the "Send to Claude" affordance accordingly.
   let channelClientCount = 0
@@ -185,6 +192,9 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
     // whether to enable the "Send to Claude" button immediately on connect.
     socket.emit('channel:status', { listenerCount: channelClientCount })
 
+    // The toolbar shows "Send to Paseo" only when the paseo CLI is reachable.
+    socket.emit('paseo:status', { configured: paseo !== undefined })
+
     // Update session info when browser reports page context
     socket.on('pageContextChanged', (context: { url: string; title: string }) => {
       session.url = context.url
@@ -213,6 +223,40 @@ function setupSocketIO(io: SocketIOServer, logger: Logger, sessions: Map<string,
         count,
         elements,
       })
+    })
+
+    // Browser asks to hand the current selection to a new Paseo agent. The ack
+    // carries the outcome so the toolbar can toast it.
+    socket.on('paseo:send', async (payload: { elements?: ElementData[] }, ack?: (result: { ok: boolean; error?: string }) => void) => {
+      const reply = typeof ack === 'function' ? ack : () => {}
+      if (paseo === undefined) {
+        reply({ ok: false, error: 'Paseo is not available' })
+        return
+      }
+      if (!isTrustedOrigin(socket.handshake.headers.origin, publicAddress)) {
+        logger.error(`Refused paseo:send from origin ${socket.handshake.headers.origin}`)
+        reply({ ok: false, error: 'Origin not allowed' })
+        return
+      }
+      if (!Array.isArray(payload?.elements) || payload.elements.length === 0) {
+        reply({ ok: false, error: 'No elements selected' })
+        return
+      }
+      session.lastActivity = Date.now()
+      const prompt = buildPaseoPrompt({
+        pageUrl: session.url,
+        pageTitle: session.title,
+        elements: filterFeedbackFields(payload.elements as unknown as Record<string, unknown>[], CHANNEL_FIELDS),
+        feedbackEndpoint: `${publicAddress}/api/sessions/${sessionId}/feedback`,
+      })
+      try {
+        await sendToNewPaseoAgent(paseo, feedbackTitle(session.title, session.url), prompt)
+        logger.log(`Started a Paseo agent for ${payload.elements.length} element(s)`)
+        reply({ ok: true })
+      } catch (err) {
+        logger.error('Paseo send failed:', err)
+        reply({ ok: false, error: err instanceof Error ? err.message : String(err) })
+      }
     })
 
     socket.on('disconnect', () => {
@@ -382,7 +426,8 @@ export async function startServer(
   port: number,
   listenAddress: string,
   publicAddress: string,
-  verbose = false
+  verbose = false,
+  paseo?: PaseoTarget
 ): Promise<ServerInstance> {
   const logger = createLogger(verbose)
   const app = express()
@@ -410,7 +455,7 @@ export async function startServer(
     maxHttpBufferSize: 50e6, // 50MB for large screenshots
   })
 
-  setupSocketIO(io, logger, sessions)
+  setupSocketIO(io, logger, sessions, publicAddress, paseo)
 
   return {
     app,

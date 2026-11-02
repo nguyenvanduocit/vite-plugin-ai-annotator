@@ -148,8 +148,10 @@ class AiAnnotatorServer {
   private options: Required<AiAnnotatorOptions>;
   private packageDir: string;
   private isRunningFromSource: boolean;
+  private projectRoot: string;
 
-  constructor(options: AiAnnotatorOptions = {}) {
+  constructor(options: AiAnnotatorOptions = {}, projectRoot: string = process.cwd()) {
+    this.projectRoot = projectRoot;
     const port = options.port ?? 7318;
     const listenAddress = options.listenAddress ?? '127.0.0.1';
 
@@ -229,7 +231,7 @@ class AiAnnotatorServer {
     // Start the server process
     this.serverProcess = spawn(cmd, args, {
       cwd: this.packageDir,
-      env: process.env,
+      env: { ...process.env, AI_ANNOTATOR_PROJECT_ROOT: this.projectRoot },
       stdio: this.options.verbose ? 'inherit' : 'pipe',
     });
 
@@ -340,8 +342,8 @@ export function aiAnnotator(options: AiAnnotatorOptions = {}): Plugin {
     apply: 'serve',
 
     configResolved(config) {
-      serverManager = new AiAnnotatorServer(options);
       root = config.root;
+      serverManager = new AiAnnotatorServer(options, root);
 
       // Auto-setup AI tool skill/instruction files
       if (options.autoSetupSkills !== false) {

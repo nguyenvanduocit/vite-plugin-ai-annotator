@@ -65,6 +65,8 @@ src/
                            - Socket.IO for browser toolbar communication
   vite-plugin.ts         Vite plugin. Spawns server as child process, injects toolbar script
                            into HTML (SPA via transformIndexHtml, SSR via middleware interception)
+  paseo.ts               Send to Paseo: prompt builder, project matching, origin check, and the
+                           `paseo` CLI calls (execFile) that start an agent in a new workspace
   auto-setup-skills.ts   Writes AI tool skill/instruction files with server address:
                            - .claude/skills/ai-annotator/SKILL.md (Claude Code)
                            - .cursor/rules/ai-annotator.mdc (Cursor, alwaysApply)
@@ -77,6 +79,8 @@ src/
     selection.ts         Element selection manager (badges, overlays, text wrapping)
     inspection.ts        Hover inspection mode (mouse tracking, highlight overlays)
     detectors.ts         Framework detection (Vue, React, Angular, Svelte)
+    toolbar-layout.ts    Pure toolbar placement: side/inset/top/collapsed, snap, viewport fit,
+                           localStorage parsing (the toolbar can be dragged and tucked into an edge)
     constants.ts         Z-index hierarchy, color palette, console limits
   rpc/
     define.ts            RPC interface definitions (ServerFunctions, ClientFunctions)
@@ -157,6 +161,22 @@ How it works:
 5. If no sessions or no feedback, the hook exits silently (exit 0)
 
 Set `AI_ANNOTATOR_PORT` env var if using a non-default port.
+
+## Send to Paseo
+
+The toolbar's "Send to Paseo" button (arrow leaving a box) starts a **new agent in a new local workspace** of the project for every click — it never writes into an existing agent. The button shows only when the `paseo` CLI and its daemon answer at server start (`isPaseoAvailable`); `paseo:status {configured}` tells the toolbar.
+
+Flow (`sendToNewPaseoAgent` in `src/paseo.ts`), triggered by `paseo:send {elements}` with a Socket.IO ack (`{ok, error?}` becomes the toast):
+
+1. `paseo project ls` → the project whose path is the vite root or the closest folder above it (`remit/web` → project `remit`). Without `--project`, Paseo registers `web/` as a project of its own.
+2. `paseo workspace create --isolation local --path <root> --project <id>` — same folder as the dev server, so edits show live in the browser
+3. `paseo run --workspace <id> --provider <p> --no-wait <prompt>` (`run` requires `--provider`). If it fails, the workspace is archived so failed clicks leave nothing behind.
+
+- `AI_ANNOTATOR_PASEO_PROVIDER` = `provider` or `provider/model` (default `claude`, which Paseo resolves to its default model — check `paseo provider ls`)
+- Project root: the vite plugin spawns the server with `cwd` = its own install dir, so it passes `config.root` as `AI_ANNOTATOR_PROJECT_ROOT`; run directly, the server uses `process.cwd()`. A server shared by several vite instances keeps the first instance's root.
+- The server strips `PASEO_AGENT_ID` from the env of its `paseo` calls (`paseoCliEnv`). It inherits it from the agent that started vite, and the CLI would then run every call as that agent: the workspace becomes its subagent, and the call fails with `Caller agent … not found` once the agent is closed.
+- `paseo:send` refuses browser origins that are not loopback or the public address (`isTrustedOrigin`), because it starts agents. Non-browser clients send no Origin and pass.
+- Every click is a fresh agent in the same folder: two agents can edit the same files at once. Use a worktree workspace if isolation matters (then the dev server will not show the change until merged).
 
 ## Gotchas
 

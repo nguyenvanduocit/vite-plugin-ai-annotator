@@ -3,6 +3,7 @@
 import { startServer, stopServer, type ServerInstance } from './ws-server'
 import { createServer } from 'net'
 import { getVersion } from './utils/version'
+import { isPaseoAvailable, type PaseoTarget } from './paseo'
 
 const VERSION = getVersion()
 const args = process.argv.slice(2)
@@ -29,8 +30,9 @@ Server Options:
   -l, --listen <address>        Address to bind server to (default: 127.0.0.1)
   -a, --public-address <url>    Public URL for reverse proxy
   -V, --verbose                 Enable verbose logging
-  -h, --help                    Show this help message
-  -v, --version                 Show version number
+
+Environment:
+  AI_ANNOTATOR_PASEO_PROVIDER   Provider (or provider/model) for "Send to Paseo" agents (default: claude)
 
 Examples:
   bunx vite-plugin-ai-annotator                  # Start server
@@ -95,6 +97,16 @@ Learn more: https://github.com/nguyenvanduocit/instantCode
 
   const isVerbose = verboseFlag || process.env.VERBOSE === 'true'
 
+  // "Send to Paseo" starts agents in the project, which the vite plugin hands
+  // over as AI_ANNOTATOR_PROJECT_ROOT (this process runs from the plugin's own
+  // folder); run directly, the cwd is the project. Hidden without a paseo CLI.
+  const paseo: PaseoTarget | undefined = (await isPaseoAvailable())
+    ? {
+        projectRoot: process.env.AI_ANNOTATOR_PROJECT_ROOT ?? process.cwd(),
+        provider: process.env.AI_ANNOTATOR_PASEO_PROVIDER?.trim() || 'claude',
+      }
+    : undefined
+
   // Check port availability
   const isPortAvailable = await checkPortAvailability(port)
   if (!isPortAvailable) {
@@ -107,11 +119,12 @@ Learn more: https://github.com/nguyenvanduocit/instantCode
   let isShuttingDown = false
 
   try {
-    serverInstance = await startServer(port, listenAddress, publicAddress, isVerbose)
+    serverInstance = await startServer(port, listenAddress, publicAddress, isVerbose, paseo)
 
     console.log(`✅ AI Annotator server started on ${publicAddress}`)
 
     console.log(`📋 REST API: ${publicAddress}/api/`)
+    if (paseo) console.log(`📨 Send to Paseo enabled: ${paseo.projectRoot} (${paseo.provider})`)
   } catch (error) {
     console.error('❌ Failed to start server:', error instanceof Error ? error.message : error)
     process.exit(1)

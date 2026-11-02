@@ -22,6 +22,16 @@ import { createRpcClient, type RpcClient } from './rpc/client.generated'
 import { isRpcError } from './rpc/types.generated'
 import { CONSOLE_LIMITS, SCREENSHOT_TIMEOUT_MS } from './annotator/constants'
 import { filterFeedbackFields, type FeedbackField } from './utils/feedback-fields'
+import {
+  DEFAULT_LAYOUT,
+  LAYOUT_STORAGE_KEY,
+  fitLayout,
+  hostPosition,
+  layoutFromRect,
+  parseLayout,
+  sameLayout,
+  type ToolbarLayout,
+} from './annotator/toolbar-layout'
 
 const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug'] as const
 
@@ -30,6 +40,11 @@ const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug'] as const
 // `styles` and `children` stay opt-in — children is recursive and would bloat
 // the clipboard — and remain reachable over REST.
 const CLIPBOARD_FIELDS: FeedbackField[] = ['xpath', 'attributes']
+
+// Pointer travel (px) before a press on the collapsed tab counts as a drag, not a tap.
+const DRAG_THRESHOLD = 4
+// Toolbars closer to the top than this show their toast below instead of above.
+const TOAST_FLIP_TOP = 56
 
 interface PopoverState {
   visible: boolean
@@ -59,6 +74,9 @@ export class AnnotatorToolbar extends LitElement {
   // Number of Claude Code channel clients currently connected to the server.
   // > 0 enables the "Send to Claude" button; 0 disables it with a hint tooltip.
   @state() private channelListenerCount = 0
+  // True when the server can reach the paseo CLI; shows "Send to Paseo".
+  @state() private paseoConfigured = false
+  @state() private layout: ToolbarLayout = DEFAULT_LAYOUT
   private popoverCleanup: (() => void) | null = null
   private tooltipCleanup: (() => void) | null = null
   private toastTimeout: ReturnType<typeof setTimeout> | null = null
@@ -82,8 +100,6 @@ export class AnnotatorToolbar extends LitElement {
       --cyber-gray: #121212;
 
       position: fixed;
-      bottom: 16px;
-      right: 16px;
       z-index: 999999;
       font-family: 'JetBrains Mono', monospace;
     }
@@ -131,9 +147,77 @@ export class AnnotatorToolbar extends LitElement {
       border-color: var(--cyber-yellow);
     }
 
-    .toolbar-btn:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
+    .drag-handle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 32px;
+      color: rgba(0, 255, 255, 0.5);
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .drag-handle:hover {
+      color: var(--cyber-cyan);
+    }
+
+    .drag-handle svg {
+      width: 12px;
+      height: 18px;
+    }
+
+    .dragging,
+    .dragging * {
+      cursor: grabbing !important;
+    }
+
+    /* Collapsed: a small tab flush against the screen edge */
+    .dock-tab {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 44px;
+      padding: 0;
+      background: var(--cyber-black);
+      color: var(--cyber-cyan);
+      border: 2px solid var(--cyber-cyan);
+      cursor: pointer;
+      touch-action: none;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+    }
+
+    .dock-tab.left {
+      border-left: none;
+    }
+
+    .dock-tab.right {
+      border-right: none;
+    }
+
+    .dock-tab:hover {
+      color: var(--cyber-yellow);
+    }
+
+    .dock-tab svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .dock-tab .badge {
+      top: -8px;
+    }
+
+    .dock-tab.left .badge {
+      right: -10px;
+    }
+
+    .dock-tab.right .badge {
+      right: auto;
+      left: -10px;
     }
 
     .toolbar-btn svg {
@@ -296,6 +380,18 @@ export class AnnotatorToolbar extends LitElement {
       box-shadow: 2px 2px 0px rgba(0, 255, 255, 0.3), 0 0 15px rgba(0, 255, 255, 0.2);
     }
 
+    .toast.toast-left {
+      left: 0;
+      right: auto;
+    }
+
+    .toast.toast-below {
+      bottom: auto;
+      top: 100%;
+      margin-bottom: 0;
+      margin-top: 8px;
+    }
+
     @keyframes toast-in {
       from {
         opacity: 0;
@@ -346,6 +442,8 @@ export class AnnotatorToolbar extends LitElement {
       link.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap'
       document.head.appendChild(link)
     }
+    this.layout = this.loadLayout()
+    window.addEventListener('resize', this.handleWindowResize)
     this.initializeManagers()
     if (this.demo) {
       this.connected = true
@@ -357,7 +455,115 @@ export class AnnotatorToolbar extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback()
+    window.removeEventListener('resize', this.handleWindowResize)
     this.cleanup()
+  }
+
+  protected updated(changed: Map<PropertyKey, unknown>) {
+    // Width changes with connection state, the Paseo button, and collapse/expand,
+    // so re-fit whenever one of them may have moved the toolbar off-screen.
+    if (changed.has('layout')) this.applyLayout()
+    if (changed.has('layout') || changed.has('connected') || changed.has('paseoConfigured')) this.fitToViewport()
+  }
+
+  // --- Placement: drag, collapse, persistence -------------------------------
+
+  private loadLayout(): ToolbarLayout {
+    try {
+      return parseLayout(localStorage.getItem(LAYOUT_STORAGE_KEY))
+    } catch {
+      return DEFAULT_LAYOUT // storage blocked (privacy mode, sandboxed iframe)
+    }
+  }
+
+  private commitLayout(next: ToolbarLayout) {
+    if (sameLayout(next, this.layout)) return
+    this.layout = next
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      this.log('Toolbar layout not persisted: storage unavailable')
+    }
+  }
+
+  private applyLayout() {
+    Object.assign(this.style, hostPosition(this.layout))
+  }
+
+  // clientWidth/Height exclude scrollbars, matching the box `position: fixed` is laid out in.
+  private get viewport() {
+    const { clientWidth, clientHeight } = document.documentElement
+    return { width: clientWidth, height: clientHeight }
+  }
+
+  private fitToViewport() {
+    const rect = this.getBoundingClientRect()
+    this.commitLayout(fitLayout(this.layout, { width: rect.width, height: rect.height }, this.viewport))
+  }
+
+  private handleWindowResize = () => this.fitToViewport()
+
+  private get toastBelow() {
+    return this.layout.top !== null && this.layout.top < TOAST_FLIP_TOP
+  }
+
+  private toggleCollapsed() {
+    this.hideTooltip()
+    // Dock to whichever side the toolbar currently sits closer to.
+    const docked = layoutFromRect(this.getBoundingClientRect(), this.viewport, !this.layout.collapsed)
+    this.commitLayout({ ...this.layout, side: docked.side, collapsed: !this.layout.collapsed })
+  }
+
+  // Moves the fixed host with the pointer, then stores where it was dropped.
+  // `onTap` runs instead when the pointer never travelled past DRAG_THRESHOLD.
+  private startDrag(event: PointerEvent, onTap?: () => void) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const handle = event.currentTarget as HTMLElement
+    handle.setPointerCapture(event.pointerId)
+    this.hideTooltip()
+
+    const start = this.getBoundingClientRect()
+    const originX = event.clientX
+    const originY = event.clientY
+    let moved = false
+
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - originX
+      const dy = e.clientY - originY
+      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+      moved = true
+      handle.classList.add('dragging')
+      Object.assign(this.style, {
+        left: `${start.left + dx}px`,
+        top: `${start.top + dy}px`,
+        right: 'auto',
+        bottom: 'auto',
+      })
+    }
+
+    const finish = (e: PointerEvent) => {
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', finish)
+      handle.removeEventListener('pointercancel', finish)
+      handle.releasePointerCapture(e.pointerId)
+      handle.classList.remove('dragging')
+      if (!moved) {
+        onTap?.()
+        return
+      }
+      const rect = this.getBoundingClientRect()
+      const dropped = layoutFromRect(rect, this.viewport, this.layout.collapsed)
+      // A collapsed tab always sits flush with its edge; keep the expanded inset for when it reopens.
+      const inset = this.layout.collapsed ? this.layout.inset : dropped.inset
+      const next = fitLayout({ ...dropped, inset }, { width: rect.width, height: rect.height }, this.viewport)
+      if (sameLayout(next, this.layout)) this.applyLayout() // dropped back where it was: restore inline style
+      else this.commitLayout(next)
+    }
+
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', finish)
+    handle.addEventListener('pointercancel', finish)
   }
 
   private initializeManagers() {
@@ -487,6 +693,10 @@ export class AnnotatorToolbar extends LitElement {
     // we can enable/disable the "Send to Claude" button.
     this.socket.on('channel:status', (data: { listenerCount?: number }) => {
       this.channelListenerCount = typeof data?.listenerCount === 'number' ? data.listenerCount : 0
+    })
+
+    this.socket.on('paseo:status', (data: { configured?: boolean }) => {
+      this.paseoConfigured = data?.configured === true
     })
   }
 
@@ -1122,6 +1332,12 @@ export class AnnotatorToolbar extends LitElement {
     </svg>`
   }
 
+  private renderPaseoIcon() {
+    return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+    </svg>`
+  }
+
   private renderClipboardIcon() {
     return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
@@ -1245,7 +1461,7 @@ export class AnnotatorToolbar extends LitElement {
       return
     }
     if (this.channelListenerCount === 0) {
-      // Defensive: button should be disabled in this case, but never trust UI.
+      // Defensive: the button is only rendered while a listener is connected, but never trust UI.
       this.showToast('No Claude listening')
       return
     }
@@ -1265,6 +1481,40 @@ export class AnnotatorToolbar extends LitElement {
     )
   }
 
+  private async sendFeedbackToPaseo() {
+    this.exitInspectingMode()
+    if (this.demo) {
+      this.showToast('Demo mode — no server')
+      return
+    }
+    if (!this.sessionId) {
+      this.showToast('No session ID')
+      return
+    }
+    if (!this.socket?.connected) {
+      this.showToast('Not connected')
+      return
+    }
+    if (this.selectionCount === 0) {
+      this.showToast('No elements selected')
+      return
+    }
+    this.showToast('Capturing screenshots…')
+    const { elements, failedImages } = await this.collectFeedback()
+    if (!this.socket?.connected) {
+      this.showToast('Not connected')
+      return
+    }
+    const result = await this.socket
+      .timeout(35000)
+      .emitWithAck('paseo:send', { elements })
+      .catch(() => ({ ok: false, error: 'Paseo did not respond' }))
+    this.showToast(
+      (result.ok ? `Started a Paseo agent for ${elements.length} element(s)` : `Paseo: ${result.error ?? 'send failed'}`) +
+      this.failedImagesNote(failedImages)
+    )
+  }
+
   // Starts the clipboard write synchronously, inside the user gesture, and lets
   // the text resolve later. Screenshots take seconds, and Safari/Firefox reject
   // a writeText() issued after the gesture has expired.
@@ -1276,6 +1526,46 @@ export class AnnotatorToolbar extends LitElement {
 
   private failedImagesNote(failed: number): string {
     return failed ? ` (${failed} screenshot(s) failed)` : ''
+  }
+
+  private renderGripIcon() {
+    return html`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 18" fill="currentColor">
+      <circle cx="3.5" cy="3" r="1.5" /><circle cx="8.5" cy="3" r="1.5" />
+      <circle cx="3.5" cy="9" r="1.5" /><circle cx="8.5" cy="9" r="1.5" />
+      <circle cx="3.5" cy="15" r="1.5" /><circle cx="8.5" cy="15" r="1.5" />
+    </svg>`
+  }
+
+  private renderChevronIcon(direction: 'left' | 'right') {
+    const d = direction === 'left' ? 'M15.75 19.5L8.25 12l7.5-7.5' : 'M8.25 4.5l7.5 7.5-7.5 7.5'
+    return html`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="${d}" />
+    </svg>`
+  }
+
+  private renderToast() {
+    if (!this.toastMessage) return ''
+    const classes = `toast ${this.layout.side === 'left' ? 'toast-left' : ''} ${this.toastBelow ? 'toast-below' : ''}`
+    return html`<div class="${classes}" role="status" aria-live="polite">${this.toastMessage}</div>`
+  }
+
+  private renderCollapsed() {
+    const { side } = this.layout
+    // Chevron points away from the edge: the direction the toolbar opens.
+    const opens = side === 'left' ? 'right' : 'left'
+    return html`
+      <button
+        class="dock-tab ${side}"
+        @pointerdown=${(e: PointerEvent) => this.startDrag(e, () => this.toggleCollapsed())}
+        @keydown=${(e: KeyboardEvent) => e.key === 'Enter' || e.key === ' ' ? this.toggleCollapsed() : undefined}
+        aria-label="Expand AI Annotator toolbar"
+        title="Expand (drag to move)"
+      >
+        ${this.renderChevronIcon(opens)}
+        ${this.selectionCount > 0 ? html`<span class="badge" aria-label="${this.selectionCount} selections">${this.selectionCount}</span>` : ''}
+        ${this.renderToast()}
+      </button>
+    `
   }
 
   private renderErrorIcon() {
@@ -1302,7 +1592,24 @@ export class AnnotatorToolbar extends LitElement {
     }
 
     return html`
+      ${this.layout.collapsed ? this.renderCollapsed() : this.renderExpanded()}
+      ${this.tooltip.visible ? html`<div class="tooltip" role="tooltip">${this.tooltip.text}</div>` : ''}
+      ${this.renderCommentPopover()}
+    `
+  }
+
+  private renderExpanded() {
+    return html`
       <div class="toolbar" role="toolbar" aria-label="AI Annotator tools">
+        <div
+          class="drag-handle"
+          @pointerdown=${(e: PointerEvent) => this.startDrag(e)}
+          aria-label="Drag to move toolbar"
+          title="Drag to move"
+        >
+          ${this.renderGripIcon()}
+        </div>
+
         <button
           class="toolbar-btn ${this.isInspecting ? 'active' : ''}"
           @click=${this.toggleInspect}
@@ -1315,47 +1622,62 @@ export class AnnotatorToolbar extends LitElement {
           ${this.renderCursorIcon()}
         </button>
 
-        <div class="btn-with-badge">
+        ${this.selectionCount > 0 ? html`
+          <div class="btn-with-badge">
+            <button
+              class="toolbar-btn"
+              @click=${this.handleClearClick}
+              @mouseenter=${(e: MouseEvent) => this.showTooltip('Clear selections', e.currentTarget as HTMLElement)}
+              @mouseleave=${() => this.hideTooltip()}
+              aria-label="Clear all selections"
+              title="Clear selections"
+            >
+              ${this.renderTrashIcon()}
+            </button>
+            <span class="badge" aria-label="${this.selectionCount} selections">${this.selectionCount}</span>
+          </div>
+        ` : ''}
+
+        ${this.selectionCount > 0 ? html`<div class="divider" role="separator" aria-orientation="vertical"></div>` : ''}
+
+        ${this.selectionCount > 0 ? html`
           <button
             class="toolbar-btn"
-            @click=${this.handleClearClick}
-            @mouseenter=${(e: MouseEvent) => this.showTooltip('Clear selections', e.currentTarget as HTMLElement)}
+            @click=${this.copyFeedbackToClipboard}
+            @mouseenter=${(e: MouseEvent) => this.showTooltip('Copy prompt for Claude', e.currentTarget as HTMLElement)}
             @mouseleave=${() => this.hideTooltip()}
-            ?disabled=${this.selectionCount === 0}
-            aria-label="Clear all selections"
-            aria-disabled="${this.selectionCount === 0}"
-            title="Clear selections"
+            aria-label="Copy feedback prompt to clipboard"
+            title="Copy"
           >
-            ${this.renderTrashIcon()}
+            ${this.renderClipboardIcon()}
           </button>
-          ${this.selectionCount > 0 ? html`<span class="badge" aria-label="${this.selectionCount} selections">${this.selectionCount}</span>` : ''}
-        </div>
+        ` : ''}
 
-        <div class="divider" role="separator" aria-orientation="vertical"></div>
+        ${this.selectionCount > 0 && this.channelListenerCount > 0 ? html`
+          <button
+            class="toolbar-btn"
+            @click=${this.sendFeedbackToClaude}
+            @mouseenter=${(e: MouseEvent) => this.showTooltip('Send to Claude', e.currentTarget as HTMLElement)}
+            @mouseleave=${() => this.hideTooltip()}
+            aria-label="Send selections to Claude Code"
+            title="Send to Claude"
+          >
+            ${this.renderSendIcon()}
+          </button>
+        ` : ''}
 
-        <button
-          class="toolbar-btn"
-          @click=${this.copyFeedbackToClipboard}
-          @mouseenter=${(e: MouseEvent) => this.showTooltip('Copy prompt for Claude', e.currentTarget as HTMLElement)}
-          @mouseleave=${() => this.hideTooltip()}
-          aria-label="Copy feedback prompt to clipboard"
-          title="Copy"
-        >
-          ${this.renderClipboardIcon()}
-        </button>
-
-        <button
-          class="toolbar-btn"
-          @click=${this.sendFeedbackToClaude}
-          @mouseenter=${(e: MouseEvent) => this.showTooltip(this.channelListenerCount > 0 ? 'Send to Claude' : 'No Claude listening — install the channel plugin', e.currentTarget as HTMLElement)}
-          @mouseleave=${() => this.hideTooltip()}
-          ?disabled=${this.channelListenerCount === 0}
-          aria-label="${this.channelListenerCount > 0 ? 'Send selections to Claude Code' : 'Send to Claude (no listener connected)'}"
-          aria-disabled="${this.channelListenerCount === 0}"
-          title="${this.channelListenerCount > 0 ? 'Send to Claude' : 'No Claude listening'}"
-        >
-          ${this.renderSendIcon()}
-        </button>
+        ${this.paseoConfigured && this.selectionCount > 0 ? html`
+          <button
+            class="toolbar-btn"
+            @click=${this.sendFeedbackToPaseo}
+            @mouseenter=${(e: MouseEvent) => this.showTooltip('Send to Paseo', e.currentTarget as HTMLElement)}
+            @mouseleave=${() => this.hideTooltip()}
+            aria-label="Send selections to Paseo agent"
+            title="Send to Paseo"
+          >
+            ${this.renderPaseoIcon()}
+          </button>
+        ` : ''}
 
         <button
           class="toolbar-btn"
@@ -1368,11 +1690,24 @@ export class AnnotatorToolbar extends LitElement {
           ${this.renderHelpIcon()}
         </button>
 
-        ${this.toastMessage ? html`<div class="toast" role="status" aria-live="polite">${this.toastMessage}</div>` : ''}
+        <button
+          class="toolbar-btn"
+          @click=${this.toggleCollapsed}
+          @mouseenter=${(e: MouseEvent) => this.showTooltip('Tuck into screen edge', e.currentTarget as HTMLElement)}
+          @mouseleave=${() => this.hideTooltip()}
+          aria-label="Collapse toolbar"
+          title="Collapse"
+        >
+          ${this.renderChevronIcon(this.layout.side)}
+        </button>
+
+        ${this.renderToast()}
       </div>
+    `
+  }
 
-      ${this.tooltip.visible ? html`<div class="tooltip" role="tooltip">${this.tooltip.text}</div>` : ''}
-
+  private renderCommentPopover() {
+    return html`
       ${this.commentPopover.visible ? html`
         <div class="popover" role="dialog" aria-label="Element comment" aria-modal="false">
           <textarea
