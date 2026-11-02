@@ -173,6 +173,7 @@ Flow (`sendToNewPaseoAgent` in `src/paseo.ts`), triggered by `paseo:send {elemen
 3. `paseo run --workspace <id> --provider <p> --no-wait <prompt>` (`run` requires `--provider`). If it fails, the workspace is archived so failed clicks leave nothing behind.
 
 - `AI_ANNOTATOR_PASEO_PROVIDER` = `provider` or `provider/model` (default `claude`, which Paseo resolves to its default model — check `paseo provider ls`)
+- `AI_ANNOTATOR_PASEO_MODE` = `paseo run --mode` value (default `auto`, a Claude mode). Another provider needs its own mode id — see `paseo provider ls`
 - Project root: the vite plugin spawns the server with `cwd` = its own install dir, so it passes `config.root` as `AI_ANNOTATOR_PROJECT_ROOT`; run directly, the server uses `process.cwd()`. A server shared by several vite instances keeps the first instance's root.
 - The server strips `PASEO_AGENT_ID` from the env of its `paseo` calls (`paseoCliEnv`). It inherits it from the agent that started vite, and the CLI would then run every call as that agent: the workspace becomes its subagent, and the call fails with `Caller agent … not found` once the agent is closed.
 - `paseo:send` refuses browser origins that are not loopback or the public address (`isTrustedOrigin`), because it starts agents. Non-browser clients send no Origin and pass.

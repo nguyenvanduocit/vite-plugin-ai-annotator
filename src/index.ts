@@ -33,6 +33,7 @@ Server Options:
 
 Environment:
   AI_ANNOTATOR_PASEO_PROVIDER   Provider (or provider/model) for "Send to Paseo" agents (default: claude)
+  AI_ANNOTATOR_PASEO_MODE       Mode of "Send to Paseo" agents, provider-specific (default: auto)
 
 Examples:
   bunx vite-plugin-ai-annotator                  # Start server
@@ -104,6 +105,7 @@ Learn more: https://github.com/nguyenvanduocit/instantCode
     ? {
         projectRoot: process.env.AI_ANNOTATOR_PROJECT_ROOT ?? process.cwd(),
         provider: process.env.AI_ANNOTATOR_PASEO_PROVIDER?.trim() || 'claude',
+        mode: process.env.AI_ANNOTATOR_PASEO_MODE?.trim() || 'auto',
       }
     : undefined
 

@@ -126,11 +126,13 @@ export interface PaseoTarget {
   projectRoot: string
   // `paseo run --provider` value: a provider, or provider/model
   provider: string
+  // `paseo run --mode` value, provider-specific (claude: auto)
+  mode: string
 }
 
 // Starts a new agent on `prompt` in a new local workspace at the project root,
 // filed under the project that contains it. Returns once the agent is running.
-export async function sendToNewPaseoAgent({ projectRoot, provider }: PaseoTarget, title: string, prompt: string): Promise<void> {
+export async function sendToNewPaseoAgent({ projectRoot, provider, mode }: PaseoTarget, title: string, prompt: string): Promise<void> {
   const projectId = await findProjectId(projectRoot)
   const workspace: unknown = JSON.parse(
     await runPaseo([
@@ -141,7 +143,7 @@ export async function sendToNewPaseoAgent({ projectRoot, provider }: PaseoTarget
   const workspaceId = (workspace as { workspaceId?: unknown })?.workspaceId
   if (typeof workspaceId !== 'string') throw new Error('paseo did not return a workspace id')
   try {
-    await runPaseo(['run', '--workspace', workspaceId, '--provider', provider, '--title', title, '--no-wait', prompt])
+    await runPaseo(['run', '--workspace', workspaceId, '--provider', provider, '--mode', mode, '--title', title, '--no-wait', prompt])
   } catch (error) {
     // Don't leave an empty workspace behind for every failed click
     await runPaseo(['workspace', 'archive', workspaceId]).catch(() => {})
