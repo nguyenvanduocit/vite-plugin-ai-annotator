@@ -1,3 +1,9 @@
+## [3.4.2](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.4.1...v3.4.2) (2026-11-04)
+
+### Bug Fixes
+
+* **paseo:** one agent per selection, and agents no longer wipe the next one ([563c138](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/commit/563c138db5383f3ffdc587884857e980f8341f8f))
+
 ## [3.4.1](https://github.com/nguyenvanduocit/vite-plugin-ai-annotator/compare/v3.4.0...v3.4.1) (2026-11-02)
 
 ### Bug Fixes
