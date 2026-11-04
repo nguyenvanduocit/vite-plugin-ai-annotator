@@ -31,6 +31,7 @@
     "build:types": "bun scripts/build-types.js",
     "build": "bun run build:server && bun run build:annotator && bun run build:vite-plugin && bun run build:nuxt && bun run build:types",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "prepublishOnly": "bun run build"
   },
   "files": [

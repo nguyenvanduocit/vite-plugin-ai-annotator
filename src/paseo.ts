@@ -13,10 +13,12 @@ export interface PaseoPromptInput {
   pageUrl: string
   pageTitle: string
   elements: Record<string, unknown>[]
-  feedbackEndpoint: string
 }
 
-export function buildPaseoPrompt({ pageUrl, pageTitle, elements, feedbackEndpoint }: PaseoPromptInput): string {
+// No "clear the selection" step: the toolbar drops the sent elements once the
+// agent starts, and a DELETE from the agent would wipe whatever the user has
+// selected for the next agent in the meantime.
+export function buildPaseoPrompt({ pageUrl, pageTitle, elements }: PaseoPromptInput): string {
   const titleSuffix = pageTitle ? ` ("${pageTitle}")` : ''
   return [
     `I selected ${elements.length} element(s) in the browser (page: ${pageUrl}${titleSuffix}) and left feedback on them.`,
@@ -28,8 +30,7 @@ export function buildPaseoPrompt({ pageUrl, pageTitle, elements, feedbackEndpoin
     '',
     `For each item: open the "file:line" path in \`componentData.componentLocation\` and apply the change its \`comment\` asks for.`,
     `\`selectedText\`, when present, is the exact text the user highlighted.`,
-    `\`imagePath\` is a screenshot of the element as the user sees it — open it to see the current UI before changing it.`,
-    `After the change ships, clear the selection: DELETE ${feedbackEndpoint}`,
+    `Open every \`imagePath\` before changing anything: each is a screenshot of the element as the user sees it. Items without a \`comment\` are context the user pointed at for the commented ones.`,
   ].join('\n')
 }
 

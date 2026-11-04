@@ -28,6 +28,7 @@
     "node_modules",
     "dist",
     "src/rpc/define.ts",
-    "src/vite-plugin.ts"
+    "src/vite-plugin.ts",
+    "src/**/*.test.ts"
   ]
 }

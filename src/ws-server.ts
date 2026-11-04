@@ -247,7 +247,6 @@ function setupSocketIO(
         pageUrl: session.url,
         pageTitle: session.title,
         elements: filterFeedbackFields(payload.elements as unknown as Record<string, unknown>[], CHANNEL_FIELDS),
-        feedbackEndpoint: `${publicAddress}/api/sessions/${sessionId}/feedback`,
       })
       try {
         await sendToNewPaseoAgent(paseo, feedbackTitle(session.title, session.url), prompt)

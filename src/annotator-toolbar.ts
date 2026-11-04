@@ -76,6 +76,9 @@ export class AnnotatorToolbar extends LitElement {
   @state() private channelListenerCount = 0
   // True when the server can reach the paseo CLI; shows "Send to Paseo".
   @state() private paseoConfigured = false
+  // A send takes seconds (screenshots, then a new workspace); a second click
+  // meanwhile would start a second agent on the same selection.
+  @state() private paseoSending = false
   @state() private layout: ToolbarLayout = DEFAULT_LAYOUT
   private popoverCleanup: (() => void) | null = null
   private tooltipCleanup: (() => void) | null = null
@@ -132,6 +135,17 @@ export class AnnotatorToolbar extends LitElement {
       background: rgba(0, 255, 255, 0.1);
       color: var(--cyber-yellow);
       border-color: var(--cyber-cyan);
+    }
+
+    .toolbar-btn:disabled {
+      opacity: 0.4;
+      cursor: progress;
+    }
+
+    .toolbar-btn:disabled:hover {
+      background: transparent;
+      color: var(--cyber-cyan);
+      border-color: transparent;
     }
 
     .toolbar-btn.active {
@@ -933,10 +947,24 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   // Selected elements with a screenshot attached to each. Every feedback route
-  // (Copy, Send to Claude, REST) reads through here.
-  private async collectFeedback(): Promise<{ elements: ElementData[]; failedImages: number }> {
+  // (Copy, Send to Claude, REST) reads through here. `selected` is the DOM side
+  // of `elements`, read in the same tick, so a caller can drop exactly what it
+  // sent even if the user selects more while it waits.
+  private async collectFeedback(): Promise<{ elements: ElementData[]; selected: Element[]; failedImages: number }> {
     const { imagePaths, failed } = await this.captureSelectionImages()
-    return { elements: this.getSelectedElements(imagePaths), failedImages: failed }
+    const selected = [...(this.selectionManager?.getSelectedElements().keys() ?? [])]
+    return { elements: this.getSelectedElements(imagePaths), selected, failedImages: failed }
+  }
+
+  private deselectElements(elements: Element[]) {
+    if (!this.selectionManager) return
+    for (const element of elements) {
+      this.selectionManager.deselectElement(element)
+      this.elementComments.delete(element)
+    }
+    if (this.commentPopover.element && elements.includes(this.commentPopover.element)) this.hideCommentPopover()
+    this.selectionCount = this.selectionManager.getSelectedCount()
+    this.emitSelectionChanged()
   }
 
   private clearSelection() {
@@ -1033,15 +1061,8 @@ export class AnnotatorToolbar extends LitElement {
   }
 
   private removeSelectedElement() {
-    if (!this.commentPopover.element || !this.selectionManager) return
-
-    const element = this.commentPopover.element
-    this.selectionManager.deselectElement(element)
-    this.elementComments.delete(element)
-    this.hideCommentPopover()
-
-    this.selectionCount = this.selectionManager.getSelectedCount()
-    this.emitSelectionChanged()
+    if (!this.commentPopover.element) return
+    this.deselectElements([this.commentPopover.element])
   }
 
   private showCommentPopoverForElement(element: Element) {
@@ -1413,7 +1434,7 @@ export class AnnotatorToolbar extends LitElement {
       '',
       `For each item: open the "file:line" path in \`componentData.componentLocation\` and apply the change its \`comment\` asks for.`,
       `\`selectedText\`, when present, is the exact text the user highlighted.`,
-      `\`imagePath\` is a screenshot of the element as the user sees it — open it to see the current UI before changing it.`,
+      `Open every \`imagePath\` before changing anything: each is a screenshot of the element as the user sees it. Items without a \`comment\` are context the user pointed at for the commented ones.`,
       `After the change ships, clear the selection: DELETE ${endpoint}`,
       `For computed styles or child elements: GET ${endpoint}?fields=styles,children`,
     ].join('\n')
@@ -1499,20 +1520,29 @@ export class AnnotatorToolbar extends LitElement {
       this.showToast('No elements selected')
       return
     }
-    this.showToast('Capturing screenshots…')
-    const { elements, failedImages } = await this.collectFeedback()
-    if (!this.socket?.connected) {
-      this.showToast('Not connected')
-      return
+    if (this.paseoSending) return
+    this.paseoSending = true
+    try {
+      this.showToast('Capturing screenshots…')
+      const { elements, selected, failedImages } = await this.collectFeedback()
+      if (!this.socket?.connected) {
+        this.showToast('Not connected')
+        return
+      }
+      const result = await this.socket
+        .timeout(35000)
+        .emitWithAck('paseo:send', { elements })
+        .catch(() => ({ ok: false, error: 'Paseo did not respond' }))
+      // The agent owns these now; leaving them selected would send them again
+      // with the next selection. A failed send keeps them for a retry.
+      if (result.ok) this.deselectElements(selected)
+      this.showToast(
+        (result.ok ? `Started a Paseo agent for ${elements.length} element(s)` : `Paseo: ${result.error ?? 'send failed'}`) +
+        this.failedImagesNote(failedImages)
+      )
+    } finally {
+      this.paseoSending = false
     }
-    const result = await this.socket
-      .timeout(35000)
-      .emitWithAck('paseo:send', { elements })
-      .catch(() => ({ ok: false, error: 'Paseo did not respond' }))
-    this.showToast(
-      (result.ok ? `Started a Paseo agent for ${elements.length} element(s)` : `Paseo: ${result.error ?? 'send failed'}`) +
-      this.failedImagesNote(failedImages)
-    )
   }
 
   // Starts the clipboard write synchronously, inside the user gesture, and lets
@@ -1670,7 +1700,9 @@ export class AnnotatorToolbar extends LitElement {
           <button
             class="toolbar-btn"
             @click=${this.sendFeedbackToPaseo}
-            @mouseenter=${(e: MouseEvent) => this.showTooltip('Send to Paseo', e.currentTarget as HTMLElement)}
+            ?disabled=${this.paseoSending}
+            aria-busy=${this.paseoSending ? 'true' : 'false'}
+            @mouseenter=${(e: MouseEvent) => this.showTooltip(this.paseoSending ? 'Sending to Paseo…' : 'Send to Paseo', e.currentTarget as HTMLElement)}
             @mouseleave=${() => this.hideTooltip()}
             aria-label="Send selections to Paseo agent"
             title="Send to Paseo"

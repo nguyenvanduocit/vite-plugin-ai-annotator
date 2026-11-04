@@ -178,6 +178,8 @@ Flow (`sendToNewPaseoAgent` in `src/paseo.ts`), triggered by `paseo:send {elemen
 - The server strips `PASEO_AGENT_ID` from the env of its `paseo` calls (`paseoCliEnv`). It inherits it from the agent that started vite, and the CLI would then run every call as that agent: the workspace becomes its subagent, and the call fails with `Caller agent … not found` once the agent is closed.
 - `paseo:send` refuses browser origins that are not loopback or the public address (`isTrustedOrigin`), because it starts agents. Non-browser clients send no Origin and pass.
 - Every click is a fresh agent in the same folder: two agents can edit the same files at once. Use a worktree workspace if isolation matters (then the dev server will not show the change until merged).
+- One send at a time, one agent per item: the button is disabled while a send runs (`paseoSending`), and once the agent starts the toolbar deselects exactly the elements it sent (`collectFeedback().selected`). Elements picked during the send stay selected; a failed send keeps everything for a retry.
+- The Paseo prompt has no `DELETE /feedback` step: `DELETE` clears the whole browser selection, so an agent finishing would wipe what the user selected for the next agent.
 
 ## Gotchas
 
